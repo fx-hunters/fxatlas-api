@@ -28,3 +28,9 @@ dependencies {
     // 아키텍처 검증 (ArchUnit) — 문서 4장
     testImplementation("com.tngtech.archunit:archunit-junit5:1.3.0")
 }
+
+// 실행 가능한 bootJar 하나만 남긴다(-plain.jar 미생성) — Dockerfile 에서 단일 jar 를 복사하기 위함.
+tasks.named<Jar>("jar") {
+    enabled = false
+}
+

@@ -1,0 +1,18 @@
+# 빌드 산출물 / 캐시 — 이미지 빌드 시 복사 불필요
+.gradle/
+**/build/
+build/
+
+# IDE / OS
+.idea/
+.vscode/
+*.iml
+.DS_Store
+
+# VCS / 문서
+.git/
+.github/
+*.md
+
+# 로컬 환경
+*.log
