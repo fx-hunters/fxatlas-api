@@ -1,0 +1,35 @@
+spring:
+  application:
+    name: fxatlas-api
+
+  # 전역 SNAKE_CASE 직렬화 — DTO 는 camelCase 로 작성하고 직렬화 시 자동 변환 (문서 5장)
+  jackson:
+    property-naming-strategy: SNAKE_CASE
+    default-property-inclusion: non_null
+
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/fxatlas}
+    username: ${DB_USERNAME:fxatlas}
+    password: ${DB_PASSWORD:fxatlas}
+    driver-class-name: org.postgresql.Driver
+
+  jpa:
+    hibernate:
+      ddl-auto: validate   # 스키마는 Flyway 가 관리한다
+    open-in-view: false
+    properties:
+      hibernate:
+        format_sql: true
+
+  # DB 마이그레이션 (문서 2장 — Flyway 제안)
+  flyway:
+    enabled: true
+    locations: classpath:db/migration
+    baseline-on-migrate: true
+
+# API 문서 (문서 6장)
+springdoc:
+  swagger-ui:
+    path: /swagger-ui/index.html
+  api-docs:
+    path: /v3/api-docs
