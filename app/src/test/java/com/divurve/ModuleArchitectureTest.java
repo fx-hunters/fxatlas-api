@@ -1,4 +1,4 @@
-package com.fxatlas;
+package com.divurve;
 
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
@@ -13,7 +13,7 @@ import com.tngtech.archunit.lang.ArchRule;
  *
  * <p>뼈대 단계에서는 일부 패키지가 아직 비어 있으므로 {@code withOptionalLayers(true)} 로 허용한다.
  */
-@AnalyzeClasses(packages = "com.fxatlas", importOptions = ImportOption.DoNotIncludeTests.class)
+@AnalyzeClasses(packages = "com.divurve", importOptions = ImportOption.DoNotIncludeTests.class)
 class ModuleArchitectureTest {
 
     @ArchTest

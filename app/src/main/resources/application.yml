@@ -1,6 +1,6 @@
 spring:
   application:
-    name: fxatlas-api
+    name: divurve-api
 
   # 전역 SNAKE_CASE 직렬화 — DTO 는 camelCase 로 작성하고 직렬화 시 자동 변환 (문서 5장)
   jackson:
@@ -8,9 +8,9 @@ spring:
     default-property-inclusion: non_null
 
   datasource:
-    url: ${DB_URL:jdbc:postgresql://localhost:5432/fxatlas}
-    username: ${DB_USERNAME:fxatlas}
-    password: ${DB_PASSWORD:fxatlas}
+    url: ${DB_URL:jdbc:postgresql://localhost:5432/divurve}
+    username: ${DB_USERNAME:divurve}
+    password: ${DB_PASSWORD:divurve}
     driver-class-name: org.postgresql.Driver
 
   jpa:

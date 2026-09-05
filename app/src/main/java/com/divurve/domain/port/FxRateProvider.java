@@ -1,4 +1,4 @@
-package com.fxatlas.domain.port;
+package com.divurve.domain.port;
 
 /**
  * 외부 환율 조회 포트 (문서 3.1).

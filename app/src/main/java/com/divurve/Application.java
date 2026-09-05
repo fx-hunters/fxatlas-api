@@ -1,10 +1,10 @@
-package com.fxatlas;
+package com.divurve;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 
 /**
- * FxAtlas 백엔드 진입점.
+ * Divurve 백엔드 진입점.
  * 아키텍처 테스트(Layer/Module ArchitectureTest)는 app/src/test 아래에 둔다.
  */
 @SpringBootApplication

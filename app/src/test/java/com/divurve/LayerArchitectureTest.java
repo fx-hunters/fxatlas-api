@@ -1,14 +1,14 @@
-package com.fxatlas;
+package com.divurve;
 
 import static com.tngtech.archunit.core.domain.properties.CanBeAnnotated.Predicates.annotatedWith;
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static com.tngtech.archunit.library.Architectures.layeredArchitecture;
 
-import com.fxatlas.common.architecture.ExternalAdapter;
-import com.fxatlas.common.architecture.PersistenceAdapter;
-import com.fxatlas.common.architecture.UseCase;
-import com.fxatlas.common.architecture.WebAdapter;
-import com.fxatlas.engine.EngineComponent;
+import com.divurve.common.architecture.ExternalAdapter;
+import com.divurve.common.architecture.PersistenceAdapter;
+import com.divurve.common.architecture.UseCase;
+import com.divurve.common.architecture.WebAdapter;
+import com.divurve.engine.EngineComponent;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.junit.AnalyzeClasses;
 import com.tngtech.archunit.junit.ArchTest;
@@ -21,7 +21,7 @@ import com.tngtech.archunit.lang.ArchRule;
  * <p>뼈대 단계에서는 아직 레이어 어노테이션을 붙인 클래스가 없으므로
  * {@code withOptionalLayers(true)} 로 빈 레이어를 허용한다. 실제 클래스가 생기면 규칙이 그대로 적용된다.
  */
-@AnalyzeClasses(packages = "com.fxatlas", importOptions = ImportOption.DoNotIncludeTests.class)
+@AnalyzeClasses(packages = "com.divurve", importOptions = ImportOption.DoNotIncludeTests.class)
 class LayerArchitectureTest {
 
     @ArchTest

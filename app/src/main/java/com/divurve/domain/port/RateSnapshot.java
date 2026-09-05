@@ -1,4 +1,4 @@
-package com.fxatlas.domain.port;
+package com.divurve.domain.port;
 
 import java.math.BigDecimal;
 import java.time.Instant;

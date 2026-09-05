@@ -8,7 +8,7 @@ subprojects {
     apply(plugin = "java")
     apply(plugin = "jacoco")
 
-    group = "com.fxatlas"
+    group = "com.divurve"
     version = "0.0.1-SNAPSHOT"
 
     repositories {
