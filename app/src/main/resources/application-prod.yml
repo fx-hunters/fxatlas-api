@@ -1,0 +1,15 @@
+# ── 운영/배포 프로파일 (prod, Render) ──────────────────────────────────────
+# 접속 정보는 코드에 넣지 않고 Render 환경변수로만 주입한다(폴백 없음 — 누락 시 즉시 실패).
+# Render 웹 서비스에 SPRING_PROFILES_ACTIVE=prod 와 아래 변수들을 설정한다.
+#   DB_URL      예) jdbc:postgresql://<host>.<region>-postgres.render.com:5432/<db>
+#   DB_USERNAME / DB_PASSWORD
+#   FRONTEND_URL  프론트 배포 도메인
+
+app:
+  frontend-url: ${FRONTEND_URL}
+
+spring:
+  datasource:
+    url: ${DB_URL}
+    username: ${DB_USERNAME}
+    password: ${DB_PASSWORD}
