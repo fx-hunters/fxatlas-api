@@ -17,7 +17,9 @@ import org.junit.jupiter.api.TestFactory;
  */
 class StubEndpointsTest {
 
-    private final AuthController auth = new AuthController();
+    // signup/login/refresh 스텁은 authDemoService 를 건드리지 않으므로 null 로 충분하다.
+    // demo() 는 실구현되어 이 스텁 목록에서 제외되고, 매핑은 AuthControllerTest 가 검증한다.
+    private final AuthController auth = new AuthController(null);
     private final MeController me = new MeController();
     private final AssetController asset = new AssetController();
     private final XrayController xray = new XrayController();
@@ -36,7 +38,6 @@ class StubEndpointsTest {
                 () -> auth.signup(null),
                 () -> auth.login(null),
                 () -> auth.refresh(null),
-                auth::demo,
                 // MyPage
                 me::getProfile,
                 () -> me.updateProfile(null),

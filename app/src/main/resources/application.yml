@@ -8,6 +8,16 @@ server:
   port: ${PORT:8080}
   address: 0.0.0.0
 
+# 인증 (이슈 #9) — JWT 액세스/리프레시 토큰. Spring Security 미사용.
+# jwt-secret 은 운영에서 반드시 JWT_SECRET 환경변수로 주입한다(HS256, 32바이트 이상).
+# 로컬 폴백은 개발 전용 값이므로 그대로 배포하지 않는다.
+# access 30분(1800s)·refresh 14일(1209600s) — NFR-SE-02.
+app:
+  auth:
+    jwt-secret: ${JWT_SECRET:local-dev-insecure-jwt-secret-please-override-in-prod-0123456789}
+    access-token-ttl-seconds: 1800
+    refresh-token-ttl-seconds: 1209600
+
 spring:
   application:
     name: divurve-api
