@@ -22,7 +22,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link UserSettingsService} 단위 테스트 — 조회(기본값 포함)·부분 수정·실효 스프레드 계산·검증.
+ * {@link UserSettingsService} 단위 테스트 — 조회(기본값 포함)·부분 수정·실효 스프레드 계산·설명 프로필 검증.
  * 스프레드 계산은 실제 engine({@link EffectiveSpreadCalculator})으로 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -43,11 +43,13 @@ class UserSettingsServiceTest {
     @Test
     void getSettings_은_저장된_설정과_실효_스프레드를_반환한다() {
         when(userSettingsRepository.findByOwner_Id(userId))
-                .thenReturn(Optional.of(UserSettings.create(user, "081", 0.5, "standard")));
+                .thenReturn(Optional.of(UserSettings.create(user, "081", 0.5, "standard", "dev")));
 
         SettingsView view = service().getSettings(userId);
 
         assertThat(view.defaultBankCode()).isEqualTo("081");
+        assertThat(view.explainLevel()).isEqualTo("standard");
+        assertThat(view.explainDomain()).isEqualTo("dev");
         assertThat(view.baseSpreadRatio()).isEqualTo(0.0165, within(1e-9));
         assertThat(view.effectiveSpreadRatio()).isEqualTo(0.00825, within(1e-9));
     }
@@ -60,7 +62,8 @@ class UserSettingsServiceTest {
 
         assertThat(view.defaultBankCode()).isNull();
         assertThat(view.fxDiscountRatio()).isEqualTo(UserSettingsService.DEFAULT_FX_DISCOUNT_RATIO);
-        assertThat(view.displayMode()).isEqualTo(UserSettingsService.DEFAULT_DISPLAY_MODE);
+        assertThat(view.explainLevel()).isEqualTo(UserSettingsService.DEFAULT_EXPLAIN_LEVEL);
+        assertThat(view.explainDomain()).isEqualTo(UserSettingsService.DEFAULT_EXPLAIN_DOMAIN);
         assertThat(view.effectiveSpreadRatio()).isEqualTo(BankSpreadTable.DEFAULT_BASE_SPREAD_RATIO, within(1e-9));
     }
 
@@ -70,26 +73,28 @@ class UserSettingsServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SettingsView view = service().updateSettings(userId, "004", 0.8, "expert");
+        SettingsView view = service().updateSettings(userId, "004", 0.8, "detailed", "finance");
 
         assertThat(view.defaultBankCode()).isEqualTo("004");
         assertThat(view.fxDiscountRatio()).isEqualTo(0.8);
-        assertThat(view.displayMode()).isEqualTo("expert");
+        assertThat(view.explainLevel()).isEqualTo("detailed");
+        assertThat(view.explainDomain()).isEqualTo("finance");
         assertThat(view.effectiveSpreadRatio()).isEqualTo(0.0035, within(1e-9));
         verify(userSettingsRepository).save(any(UserSettings.class));
     }
 
     @Test
     void updateSettings_은_null_필드는_기존값을_유지한다() {
-        UserSettings existing = UserSettings.create(user, "081", 0.5, "standard");
+        UserSettings existing = UserSettings.create(user, "081", 0.5, "standard", "dev");
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(existing));
         when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // 우대율만 갱신, 은행·표시모드는 null → 기존값 유지
-        SettingsView view = service().updateSettings(userId, null, 0.9, null);
+        // 우대율만 갱신, 은행·설명 프로필은 null → 기존값 유지
+        SettingsView view = service().updateSettings(userId, null, 0.9, null, null);
 
         assertThat(view.defaultBankCode()).isEqualTo("081");
-        assertThat(view.displayMode()).isEqualTo("standard");
+        assertThat(view.explainLevel()).isEqualTo("standard");
+        assertThat(view.explainDomain()).isEqualTo("dev");
         assertThat(view.fxDiscountRatio()).isEqualTo(0.9);
         assertThat(view.effectiveSpreadRatio()).isEqualTo(0.00165, within(1e-9));
         assertThat(existing.getFxDiscountRatio()).isEqualTo(0.9);
@@ -97,16 +102,16 @@ class UserSettingsServiceTest {
     }
 
     @Test
-    void updateSettings_은_우대율을_생략하면_기존_우대율을_유지한다() {
-        UserSettings existing = UserSettings.create(user, "081", 0.5, "standard");
+    void updateSettings_은_설명선호만_바꿔도_나머지를_유지한다() {
+        UserSettings existing = UserSettings.create(user, "081", 0.5, "simple", "plain");
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(existing));
         when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // 표시모드만 갱신, 우대율은 null → 기존 우대율(0.5) 유지
-        SettingsView view = service().updateSettings(userId, null, null, "expert");
+        SettingsView view = service().updateSettings(userId, null, null, "detailed", null);
 
         assertThat(view.fxDiscountRatio()).isEqualTo(0.5);
-        assertThat(view.displayMode()).isEqualTo("expert");
+        assertThat(view.explainLevel()).isEqualTo("detailed");
+        assertThat(view.explainDomain()).isEqualTo("plain");
         assertThat(view.defaultBankCode()).isEqualTo("081");
     }
 
@@ -116,12 +121,12 @@ class UserSettingsServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        // 처음 설정하면서 모든 필드를 생략(null) → 은행 미지정, 우대율·표시모드는 기본값
-        SettingsView view = service().updateSettings(userId, null, null, null);
+        SettingsView view = service().updateSettings(userId, null, null, null, null);
 
         assertThat(view.defaultBankCode()).isNull();
         assertThat(view.fxDiscountRatio()).isEqualTo(UserSettingsService.DEFAULT_FX_DISCOUNT_RATIO);
-        assertThat(view.displayMode()).isEqualTo(UserSettingsService.DEFAULT_DISPLAY_MODE);
+        assertThat(view.explainLevel()).isEqualTo(UserSettingsService.DEFAULT_EXPLAIN_LEVEL);
+        assertThat(view.explainDomain()).isEqualTo(UserSettingsService.DEFAULT_EXPLAIN_DOMAIN);
         assertThat(view.effectiveSpreadRatio()).isEqualTo(BankSpreadTable.DEFAULT_BASE_SPREAD_RATIO, within(1e-9));
     }
 
@@ -129,14 +134,21 @@ class UserSettingsServiceTest {
     void updateSettings_은_우대율이_범위를_벗어나면_400() {
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().updateSettings(userId, "004", 1.5, "expert"))
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 1.5, "detailed", "finance"))
                 .isInstanceOf(InvalidRequestException.class);
         verify(userSettingsRepository, never()).save(any());
     }
 
     @Test
-    void updateSettings_은_표시모드가_허용값이_아니면_400() {
-        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "simple"))
+    void updateSettings_은_설명선호가_허용값이_아니면_400() {
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "beginner", null))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(userSettingsRepository, never()).save(any());
+    }
+
+    @Test
+    void updateSettings_은_설명분야가_허용값이_아니면_400() {
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, null, "cooking"))
                 .isInstanceOf(InvalidRequestException.class);
         verify(userSettingsRepository, never()).save(any());
     }
@@ -146,7 +158,7 @@ class UserSettingsServiceTest {
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "expert"))
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "detailed", "finance"))
                 .isInstanceOf(NotFoundException.class);
     }
 }

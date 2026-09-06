@@ -24,7 +24,7 @@ import org.hibernate.generator.EventType;
  * 등급값({@code risk_type})은 이후 집중도 기준선·버킷 비율의 입력이 된다.
  *
  * <p>등급·점수는 engine {@code RiskProfileScorer} 가 산출한 값을 받아 저장만 한다 — 엔티티는 계산하지 않는다.
- * 표시(설명) 프로필인 {@link UserSettings#getDisplayMode()} 와는 분리 관리한다(FR-MY-03).
+ * 설명 프로필인 {@link UserSettings#getExplainLevel()} 와는 분리 관리한다(FR-MY-03).
  */
 @Entity
 @Table(name = "risk_profiles")
