@@ -20,8 +20,8 @@ class GoalRepositoryTest extends RepositoryTestBase {
 
     @Test
     void findByOwner_Id_는_소유자의_목표만_반환한다() {
-        User alice = userRepository.save(User.create("alice-g@divurve.com", "앨리스", false));
-        User bob = userRepository.save(User.create("bob-g@divurve.com", "밥", false));
+        User alice = userRepository.save(User.createDemo("alice-g@divurve.com", "앨리스"));
+        User bob = userRepository.save(User.createDemo("bob-g@divurve.com", "밥"));
         goalRepository.save(Goal.builder(alice, "유학자금", "onetime", "spend", "USD")
             .targetAmount(50000).targetDate(LocalDate.of(2027, 3, 1)).budgetAmount(10_000_000).status("active")
             .build());
@@ -39,7 +39,7 @@ class GoalRepositoryTest extends RepositoryTestBase {
 
     @Test
     void 선택_필드가_없어도_목표를_저장하고_조회할_수_있다() {
-        User owner = userRepository.save(User.create("carol-g@divurve.com", "캐럴", false));
+        User owner = userRepository.save(User.createDemo("carol-g@divurve.com", "캐럴"));
         goalRepository.save(Goal.builder(owner, "적립", "recurring", "invest", "USD")
             .targetAmount(0).budgetAmount(500_000).status("active").build());
 

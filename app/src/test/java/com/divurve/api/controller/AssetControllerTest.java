@@ -157,7 +157,7 @@ class AssetControllerTest {
     // ── fixtures ────────────────────────────────────────────────────────
     private static Holding holdingFixture(
             UUID id, String ticker, String ccy, double qty, double avg, LocalDate purchasedAt, PurchaseFxRate fx) {
-        User owner = User.create("x@divurve.com", "x", false);
+        User owner = User.createDemo("x@divurve.com", "x");
         Holding h = Holding.create(owner, ticker, ccy, qty, avg);
         h.assignPurchaseContext(purchasedAt, fx);
         setField(h, "id", id);
@@ -166,7 +166,7 @@ class AssetControllerTest {
 
     private static Deposit depositFixture(
             UUID id, String ccy, BigDecimal amount, LocalDate purchasedAt, PurchaseFxRate fx) {
-        User owner = User.create("x@divurve.com", "x", false);
+        User owner = User.createDemo("x@divurve.com", "x");
         Deposit d = Deposit.create(owner, ccy, amount);
         d.assignPurchaseContext(purchasedAt, fx);
         setField(d, "id", id);
