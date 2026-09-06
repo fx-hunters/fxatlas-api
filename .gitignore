@@ -39,3 +39,4 @@ build/
 # OS
 .DS_Store
 app/src/main/resources/application-dev.yml
+.claude/agents

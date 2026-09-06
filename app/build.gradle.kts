@@ -21,6 +21,10 @@ dependencies {
     // API 문서 (Swagger UI)
     implementation("org.springdoc:springdoc-openapi-starter-webmvc-ui:2.6.0")
 
+    // 외부 데이터 캐싱 (이슈 #12) — 일별 종가 캐시. Caffeine 로컬 캐시.
+    implementation("org.springframework.boot:spring-boot-starter-cache")
+    implementation("com.github.ben-manes.caffeine:caffeine")
+
     // JWT — 액세스/리프레시 토큰 발급·검증 (이슈 #9). Spring Security 미사용, jjwt 단독 사용.
     implementation("io.jsonwebtoken:jjwt-api:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
