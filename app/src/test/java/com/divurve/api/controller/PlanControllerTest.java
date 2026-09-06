@@ -139,7 +139,7 @@ class PlanControllerTest {
     @DisplayName("createPlan 은 확정된 계획과 회차를 data/meta 로 감싼다")
     void createPlanWrapsSavedPlan() {
         PlanCreateRequest request = new PlanCreateRequest(100000L, 0.8, 4);
-        when(planConfirmService.confirmAndSavePlan(goalId, 0.8, 4, 0.0, 0.0, null))
+        when(planConfirmService.confirmAndSaveWithSteps(goalId, 100000L, 0.8, 4, 0.0, 0.0, null))
                 .thenReturn(plan);
         when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId)).thenReturn(steps());
 
@@ -152,7 +152,7 @@ class PlanControllerTest {
         assertThat(response.data().steps()).hasSize(2);
         assertThat(response.data().steps().get(0).scheduledDate()).isEqualTo("2024-01-01");
         assertThat(response.data().steps().get(1).scheduledDate()).isNull();
-        verify(planConfirmService).confirmAndSavePlan(goalId, 0.8, 4, 0.0, 0.0, null);
+        verify(planConfirmService).confirmAndSaveWithSteps(goalId, 100000L, 0.8, 4, 0.0, 0.0, null);
     }
 
     @Test

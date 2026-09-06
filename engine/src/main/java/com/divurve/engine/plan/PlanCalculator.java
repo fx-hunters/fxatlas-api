@@ -2,6 +2,10 @@ package com.divurve.engine.plan;
 
 import static java.util.Objects.requireNonNull;
 
+import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
+
 /**
  * 계획 회차 관련 순수 계산 함수.
  * Spring/JPA 의존 없음. 모든 메서드는 상태를 변경하지 않는 순수 함수.
@@ -95,5 +99,43 @@ public class PlanCalculator {
             return 0.0;
         }
         return currentAchieveProb * ((double) remainingSteps / totalSteps);
+    }
+
+    /**
+     * 총액을 splitCount 회차로 균등분할한 스케줄을 생성한다.
+     * (계획 미리보기의 균등분할 공식 {@code amount = totalAmount / splitCount} 과 동일 —
+     * 계획 확정 시에도 같은 공식으로 회차를 만들어 미리보기와 확정 결과가 어긋나지 않게 한다.)
+     *
+     * @param totalAmount  분배할 총 금액 (예: 안전 버킷 금액)
+     * @param splitCount   분할 회차수 (1 이상)
+     * @param intervalDays 회차 간 간격(일)
+     * @param startDate    첫 회차 예정일
+     * @return seq 1..splitCount 순서의 회차 스케줄
+     * @throws IllegalArgumentException splitCount 가 1 미만인 경우
+     */
+    public static List<ScheduledStep> generateEqualSplitSchedule(
+            double totalAmount, int splitCount, int intervalDays, LocalDate startDate) {
+        requireNonNull(startDate, "startDate");
+        if (splitCount < 1) {
+            throw new IllegalArgumentException("splitCount는 1 이상이어야 합니다: " + splitCount);
+        }
+
+        double amountPerStep = totalAmount / splitCount;
+        List<ScheduledStep> schedule = new ArrayList<>();
+        for (int seq = 1; seq <= splitCount; seq++) {
+            LocalDate scheduledDate = startDate.plusDays((long) intervalDays * (seq - 1));
+            schedule.add(new ScheduledStep(seq, scheduledDate, amountPerStep));
+        }
+        return schedule;
+    }
+
+    /**
+     * 균등분할 스케줄의 단일 회차.
+     *
+     * @param seq           회차 번호 (1부터 시작)
+     * @param scheduledDate 예정일
+     * @param amount        회차 부담 금액
+     */
+    public record ScheduledStep(int seq, LocalDate scheduledDate, double amount) {
     }
 }

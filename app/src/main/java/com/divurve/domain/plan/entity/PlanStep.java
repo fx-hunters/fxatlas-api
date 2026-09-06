@@ -104,20 +104,34 @@ public class PlanStep {
     }
 
     /**
-     * 회차 완료 기록.
+     * 회차 완료 기록. pending 상태에서만 완료로 전이할 수 있다 — 이미 completed/skipped 인 회차를
+     * 다시 완료 처리하면 executed_amount 가 덮어써지거나 skipped 이력이 사라지므로 막는다.
      *
      * @param executedAmount 실제 실행한 외화 금액
+     * @throws IllegalStateException 현재 상태가 pending 이 아닌 경우
      */
     public void markAsCompleted(double executedAmount) {
+        requireStatusIsPending("완료");
         this.executedAmount = executedAmount;
         this.status = PlanStepStatus.COMPLETED;
     }
 
     /**
-     * 회차 건너뛰기 표시.
+     * 회차 건너뛰기 표시. pending 상태에서만 건너뛸 수 있다 — 이미 completed 인 회차를 건너뛰면
+     * 실행 기록이 사라지고, 이미 skipped 인 회차를 다시 건너뛰면 부담 재분배가 중복 적용된다.
+     *
+     * @throws IllegalStateException 현재 상태가 pending 이 아닌 경우
      */
     public void markAsSkipped() {
+        requireStatusIsPending("건너뛰기");
         this.status = PlanStepStatus.SKIPPED;
+    }
+
+    private void requireStatusIsPending(String action) {
+        if (!isPending()) {
+            throw new IllegalStateException(
+                    "이미 " + status + " 상태인 회차는 " + action + " 처리할 수 없습니다: seq=" + seq);
+        }
     }
 
     /**

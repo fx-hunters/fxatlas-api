@@ -1,6 +1,7 @@
 package com.divurve.engine.plan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -203,6 +204,52 @@ class PlanCalculatorTest {
         void parameterized(double prob, int total, int remaining, double expected) {
             double result = PlanCalculator.calculateAchieveProbAfterSkip(prob, total, remaining);
             assertEquals(expected, result, EPSILON);
+        }
+    }
+
+    @Nested
+    @DisplayName("generateEqualSplitSchedule")
+    class GenerateEqualSplitScheduleTest {
+
+        @Test
+        @DisplayName("총액을 splitCount 로 균등분할하고, seq 순서로 intervalDays 간격 배치")
+        void normalCase() {
+            var schedule = PlanCalculator.generateEqualSplitSchedule(
+                    1000.0, 4, 7, java.time.LocalDate.of(2026, 1, 1));
+
+            assertEquals(4, schedule.size());
+            assertEquals(1, schedule.get(0).seq());
+            assertEquals(java.time.LocalDate.of(2026, 1, 1), schedule.get(0).scheduledDate());
+            assertEquals(250.0, schedule.get(0).amount(), EPSILON);
+            assertEquals(4, schedule.get(3).seq());
+            assertEquals(java.time.LocalDate.of(2026, 1, 22), schedule.get(3).scheduledDate());
+            assertEquals(250.0, schedule.get(3).amount(), EPSILON);
+        }
+
+        @Test
+        @DisplayName("splitCount 가 1이면 회차 하나만 생성하고 전체 금액을 담는다")
+        void singleStep() {
+            var schedule = PlanCalculator.generateEqualSplitSchedule(
+                    500.0, 1, 30, java.time.LocalDate.of(2026, 3, 1));
+
+            assertEquals(1, schedule.size());
+            assertEquals(500.0, schedule.get(0).amount(), EPSILON);
+            assertEquals(java.time.LocalDate.of(2026, 3, 1), schedule.get(0).scheduledDate());
+        }
+
+        @Test
+        @DisplayName("splitCount 가 1 미만이면 예외 발생")
+        void splitCountBelowOneThrows() {
+            assertThrows(IllegalArgumentException.class, () ->
+                    PlanCalculator.generateEqualSplitSchedule(
+                            1000.0, 0, 7, java.time.LocalDate.of(2026, 1, 1)));
+        }
+
+        @Test
+        @DisplayName("startDate 가 null 이면 예외 발생")
+        void nullStartDateThrows() {
+            assertThrows(NullPointerException.class, () ->
+                    PlanCalculator.generateEqualSplitSchedule(1000.0, 4, 7, null));
         }
     }
 }
