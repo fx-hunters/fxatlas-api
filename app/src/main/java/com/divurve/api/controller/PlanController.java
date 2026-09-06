@@ -126,8 +126,9 @@ public class PlanController {
         UUID goalId = UUID.fromString(id);
         planAccessService.requireGoalOwner(userId, goalId);
 
-        Plan savedPlan = planConfirmService.confirmAndSavePlan(
+        Plan savedPlan = planConfirmService.confirmAndSaveWithSteps(
                 goalId,
+                request.weeklyBudgetKrw(),
                 request.safeRatio(),
                 request.splitCount(),
                 0.0, // opportunityAmount는 요청에 없으므로 기본값

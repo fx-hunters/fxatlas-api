@@ -3,6 +3,7 @@ package com.divurve.domain.plan;
 import static java.util.Objects.requireNonNull;
 
 import com.divurve.common.architecture.UseCase;
+import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.domain.plan.entity.PlanStep;
 import com.divurve.engine.plan.PlanCalculator;
 import java.util.List;
@@ -34,30 +35,41 @@ public class PlanStepExecutionService {
     }
 
     /**
-     * 회차 완료 기록.
+     * 회차 완료 기록. 이미 completed/skipped 인 회차는 완료 처리할 수 없다 (400).
      *
      * @param planId          계획 ID
      * @param seq             회차번호
      * @param executedAmount  실제 체결된 외화 금액
      * @return 완료된 회차
+     * @throws InvalidRequestException 회차가 pending 상태가 아닌 경우
      */
     public PlanStep completeStep(UUID planId, int seq, double executedAmount) {
         PlanStep step = planStepRepository.findByPlan_IdAndSeq(planId, seq)
                 .orElseThrow(() -> new IllegalArgumentException(
                         "PlanStep not found: planId=" + planId + ", seq=" + seq));
 
-        step.markAsCompleted(executedAmount);
+        markStepCompleted(step, executedAmount);
         return planStepRepository.save(step);
+    }
+
+    private void markStepCompleted(PlanStep step, double executedAmount) {
+        try {
+            step.markAsCompleted(executedAmount);
+        } catch (IllegalStateException e) {
+            throw new InvalidRequestException(e.getMessage(), "seq");
+        }
     }
 
     /**
      * 회차 건너뛰기.
      * 다음 회차부터 남은 금액을 남은 회차로 나누어 부담을 증가시킨다.
+     * 이미 completed/skipped 인 회차는 건너뛸 수 없다 (400).
      *
      * @param planId      계획 ID
      * @param seq         건너뛸 회차번호
      * @param targetAmount 목표 외화 금액 (남은 금액 계산용)
      * @return 건너뛰기 결과 (연속 건너뛰기 수, 새로운 부담 등)
+     * @throws InvalidRequestException 회차가 pending 상태가 아닌 경우
      */
     public SkipResult skipStep(UUID planId, int seq, double targetAmount) {
         // 계획 존재 여부 검증 (없는 계획의 회차는 건너뛸 수 없다)
@@ -71,7 +83,7 @@ public class PlanStepExecutionService {
         // 재분배 전 현재 회차의 부담을 먼저 확보한다
         double burdenBefore = currentStep.getAmount();
 
-        currentStep.markAsSkipped();
+        markStepSkipped(currentStep);
         planStepRepository.save(currentStep);
 
         List<PlanStep> allSteps = planStepRepository.findByPlan_IdOrderBySeqAsc(planId);
@@ -121,6 +133,14 @@ public class PlanStepExecutionService {
      * seq 직전 회차부터 역순으로 내려가며 SKIPPED 가 연속되는 동안 센다.
      * 현재 회차(seq)는 이미 건너뛴 상태이므로 1 부터 시작한다.
      */
+    private void markStepSkipped(PlanStep step) {
+        try {
+            step.markAsSkipped();
+        } catch (IllegalStateException e) {
+            throw new InvalidRequestException(e.getMessage(), "seq");
+        }
+    }
+
     private int countConsecutiveSkips(List<PlanStep> allSteps, int seq) {
         int count = 1; // 현재 회차 포함
         for (int i = allSteps.size() - 1; i >= 0; i--) {

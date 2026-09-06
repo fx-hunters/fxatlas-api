@@ -12,6 +12,7 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.domain.goal.GoalRepository;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.entity.Plan;
@@ -25,6 +26,9 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
 
 /**
  * PlanConfirmService 테스트.
@@ -227,6 +231,115 @@ class PlanConfirmServiceTest {
             // When, Then
             assertThrows(IllegalArgumentException.class, () ->
                 service.savePlanSteps(planId, steps));
+        }
+    }
+
+    @Nested
+    @DisplayName("confirmAndSaveWithSteps")
+    class ConfirmAndSaveWithStepsTest {
+
+        private UUID goalId;
+        private User owner;
+
+        @BeforeEach
+        void setUp() {
+            goalId = UUID.randomUUID();
+            owner = User.create("test@example.com", "Test User", null);
+        }
+
+        /**
+         * confirmAndSaveWithSteps 는 confirmAndSavePlan 이 만든 Plan 을 다시
+         * {@code planRepository.findById(plan.getId())} 로 조회해 회차를 만든다 — 이 목(mock)
+         * 세계에서는 save 가 id 를 채워주지 않아 plan.getId() 가 null 이므로, findById 는
+         * 인자와 무관하게 같은 목적(goal)의 새 Plan 을 돌려주면 충분하다(회차 생성에는 goal 의
+         * recur_interval 만 쓰인다).
+         */
+        private void stubSaves(Goal goal) {
+            when(planRepository.findTopByGoal_IdOrderByVersionDesc(goalId)).thenReturn(Optional.empty());
+            when(planRepository.findByGoal_IdAndIsActiveTrue(goalId)).thenReturn(Optional.empty());
+            when(planRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+            when(planRepository.findById(any())).thenAnswer(
+                    invocation -> Optional.of(Plan.builder(goal, 1).build()));
+            when(planStepRepository.save(any())).thenAnswer(invocation -> invocation.getArgument(0));
+        }
+
+        @Test
+        @DisplayName("계획을 확정하고 안전 버킷 금액을 균등분할한 회차를 저장한다 (recur_interval 없음 — 1년 균등배분)")
+        void savesEqualSplitStepsWithDefaultInterval() {
+            Goal goal = Goal.builder(owner, "USD Goal", "savings", "travel", "USD")
+                    .targetAmount(10000.0)
+                    .build();
+            when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+            stubSaves(goal);
+
+            Plan result = service.confirmAndSaveWithSteps(goalId, 100_000L, 0.8, 4, 0.0, 0.0, null);
+
+            ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
+            verify(planStepRepository, times(4)).save(captor.capture());
+            List<PlanStep> savedSteps = captor.getAllValues();
+            assertEquals(4, savedSteps.size());
+            // monthlyBudget = 100_000 * 4 = 400_000, safeAmount = 400_000 * 0.8 = 320_000, /4 회차
+            assertEquals(80_000.0, savedSteps.get(0).getAmount(), 1e-9);
+            assertEquals(1, savedSteps.get(0).getSeq());
+            assertEquals(LocalDate.now(), savedSteps.get(0).getScheduledDate());
+            assertEquals(LocalDate.now().plusDays((365 / 4) * 3L), savedSteps.get(3).getScheduledDate());
+            assertNotNull(result);
+        }
+
+        @Test
+        @DisplayName("recur_interval 이 공백이면 1년을 splitCount 로 균등배분한다")
+        void blankRecurIntervalUsesDefaultAnnualSplit() {
+            Goal goal = Goal.builder(owner, "USD Goal", "savings", "travel", "USD")
+                    .targetAmount(10000.0)
+                    .recurInterval("  ")
+                    .build();
+            when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+            stubSaves(goal);
+
+            service.confirmAndSaveWithSteps(goalId, 100_000L, 0.8, 4, 0.0, 0.0, null);
+
+            ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
+            verify(planStepRepository, times(4)).save(captor.capture());
+            assertEquals(
+                    LocalDate.now().plusDays(365L / 4),
+                    captor.getAllValues().get(1).getScheduledDate());
+        }
+
+        @ParameterizedTest
+        @CsvSource({
+            "WEEKLY,7",
+            "BIWEEKLY,14",
+            "MONTHLY,30",
+            "QUARTERLY,90",
+            "UNKNOWN,91",
+        })
+        @DisplayName("recur_interval 에 따라 회차 간격이 달라진다")
+        void resolvesIntervalDaysByRecurInterval(String recurInterval, int expectedIntervalDays) {
+            Goal goal = Goal.builder(owner, "USD Goal", "savings", "travel", "USD")
+                    .targetAmount(10000.0)
+                    .recurInterval(recurInterval)
+                    .build();
+            when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+            stubSaves(goal);
+
+            service.confirmAndSaveWithSteps(goalId, 100_000L, 0.8, 4, 0.0, 0.0, null);
+
+            ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
+            verify(planStepRepository, times(4)).save(captor.capture());
+            List<PlanStep> savedSteps = captor.getAllValues();
+            assertEquals(
+                    LocalDate.now().plusDays((long) expectedIntervalDays),
+                    savedSteps.get(1).getScheduledDate());
+        }
+
+        @Test
+        @DisplayName("splitCount 가 1 미만이면 400(VALIDATION_FAILED) 이고 계획을 저장하지 않는다")
+        void rejectsSplitCountBelowOne() {
+            assertThrows(InvalidRequestException.class, () ->
+                    service.confirmAndSaveWithSteps(goalId, 100_000L, 0.8, 0, 0.0, 0.0, null));
+
+            verify(planRepository, org.mockito.Mockito.never()).save(any());
+            verify(planStepRepository, org.mockito.Mockito.never()).save(any());
         }
     }
 }
