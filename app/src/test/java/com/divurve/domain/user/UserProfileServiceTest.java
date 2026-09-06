@@ -34,7 +34,7 @@ class UserProfileServiceTest {
 
     @Test
     void testGetProfile_ReturnsProfileWithCorrectInfo() {
-        User user = User.create("test@example.com", "테스트사용자", null, null);
+        User user = User.create("test@example.com", "테스트사용자", null);
         user = Mockito.spy(user);
         Mockito.doReturn(userId).when(user).getId();
         when(repository.findById(userId)).thenReturn(Optional.of(user));
@@ -60,7 +60,7 @@ class UserProfileServiceTest {
 
     @Test
     void testUpdateProfile_UpdatesNameSuccessfully() {
-        User user = User.create("test@example.com", "테스트사용자", null, null);
+        User user = User.create("test@example.com", "테스트사용자", null);
         user = Mockito.spy(user);
         Mockito.doReturn(userId).when(user).getId();
         when(repository.findById(userId)).thenReturn(Optional.of(user));
@@ -82,7 +82,7 @@ class UserProfileServiceTest {
 
     @Test
     void 초기_설정을_전부_건너뛰어도_종료할_수_있다() {
-        User user = User.create("test@example.com", "테스트사용자", null, null);
+        User user = User.create("test@example.com", "테스트사용자", null);
         when(repository.findById(userId)).thenReturn(Optional.of(user));
         when(repository.save(user)).thenReturn(user);
 
@@ -98,7 +98,7 @@ class UserProfileServiceTest {
     @Test
     void 초기_설정_종료는_멱등이며_최초_완료_시각을_유지한다() {
         Instant first = Instant.parse("2026-09-01T15:30:00Z");
-        User user = User.create("test@example.com", "테스트사용자", null, null);
+        User user = User.create("test@example.com", "테스트사용자", null);
         user.completeOnboarding(first);
         when(repository.findById(userId)).thenReturn(Optional.of(user));
         when(repository.save(user)).thenReturn(user);
@@ -117,7 +117,7 @@ class UserProfileServiceTest {
 
     @Test
     void isOnboarded_는_완료_여부만_돌려준다() {
-        User user = User.create("test@example.com", "테스트사용자", null, null);
+        User user = User.create("test@example.com", "테스트사용자", null);
         when(repository.findById(userId)).thenReturn(Optional.of(user));
         assertThat(service.isOnboarded(userId)).isFalse();
 

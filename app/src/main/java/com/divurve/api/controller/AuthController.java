@@ -13,6 +13,7 @@ import com.divurve.domain.port.AuthTokens;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
@@ -40,7 +41,7 @@ public class AuthController {
     }
 
     @Operation(summary = "회원가입",
-            description = "이메일·비밀번호·이름·온보딩 목적으로 계정을 만든다. 이메일은 고유해야 한다. "
+            description = "이메일·비밀번호·이름으로 계정을 만든다. 이메일은 고유해야 한다. "
                     + "가입 직후에는 초기 설정을 하지 않았으므로 onboarded=false 다.")
     @ApiResponses({
             @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "가입 성공"),
@@ -50,12 +51,8 @@ public class AuthController {
                     responseCode = "409", description = "DUPLICATE_RESOURCE — 이미 가입된 이메일")
     })
     @PostMapping("/signup")
-    public ApiResponse<TokenResponse> signup(@RequestBody SignupRequest request) {
-        AuthTokens tokens = authService.signup(
-                request.email(),
-                request.password(),
-                request.name(),
-                request.onboardingPurpose());
+    public ApiResponse<TokenResponse> signup(@Valid @RequestBody SignupRequest request) {
+        AuthTokens tokens = authService.signup(request.email(), request.password(), request.name());
         return ApiResponse.of(toTokenResponse(tokens, false, false));
     }
 

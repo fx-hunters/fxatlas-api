@@ -59,7 +59,7 @@ class PlanPreviewServiceTest {
     }
 
     private Goal.Builder goalBuilder(String purpose) {
-        return Goal.builder(User.create("me@divurve.com", "나", null, null), "미국 ETF 적립", "RECURRING",
+        return Goal.builder(User.create("me@divurve.com", "나", null), "미국 ETF 적립", "RECURRING",
                         purpose, "USD")
                 .targetAmount(10_000_000)
                 .targetDate(LocalDate.now().plusDays(365))

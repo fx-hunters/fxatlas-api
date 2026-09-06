@@ -16,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
  * 중복 검증, 토큰 발급을 통합한다.
  *
  * <p>데모 계정(AuthDemoService)과 달리, 일반 회원은 passwordHash를 가지며,
- * 이메일·비밀번호로 인증한다. 온보딩 목적(OVERSEAS_INVESTMENT/FOREIGN_CURRENCY_GOAL)도 저장한다.
+ * 이메일·비밀번호로 인증한다.
  *
  * <p>refresh 메서드는 기존 리프레시 토큰 검증 후 새 액세스 토큰만 발급한다.
  *
@@ -42,23 +42,21 @@ public class AuthService {
      * @param email 이메일
      * @param password 평문 비밀번호
      * @param name 사용자 이름
-     * @param onboardingPurpose 온보딩 목적 (OVERSEAS_INVESTMENT 또는 FOREIGN_CURRENCY_GOAL)
      * @return 발급된 액세스·리프레시 토큰
      * @throws IllegalArgumentException 이메일 중복 또는 입력 파라미터 검증 실패 시
      */
     @Transactional
-    public AuthTokens signup(String email, String password, String name, String onboardingPurpose) {
+    public AuthTokens signup(String email, String password, String name) {
         Objects.requireNonNull(email, "email must not be null");
         Objects.requireNonNull(password, "password must not be null");
         Objects.requireNonNull(name, "name must not be null");
-        Objects.requireNonNull(onboardingPurpose, "onboardingPurpose must not be null");
 
         if (userRepository.findByEmail(email).isPresent()) {
             throw new IllegalArgumentException("Email already exists: " + email);
         }
 
         String passwordHash = passwordEncoder.encode(password);
-        User user = User.create(email, name, passwordHash, onboardingPurpose);
+        User user = User.create(email, name, passwordHash);
         User savedUser = userRepository.save(user);
 
         return tokenProvider.issue(savedUser.getId(), false);
