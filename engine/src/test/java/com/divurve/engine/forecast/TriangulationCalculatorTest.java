@@ -117,4 +117,16 @@ class TriangulationCalculatorTest {
         assertThrows(IllegalArgumentException.class, () -> TriangulationCalculator.invertRate(0));
         assertThrows(IllegalArgumentException.class, () -> TriangulationCalculator.invertRate(-100));
     }
+
+    @Test
+    void testTriangulateRates_WithJpyUsd() {
+        Map<String, Double> baseRates = new HashMap<>();
+        baseRates.put("USD_KRW", 1200.0);
+        baseRates.put("USD_JPY", 110.0);
+        baseRates.put("EUR_USD", 1.1);
+        baseRates.put("JPY_USD", 0.009);
+
+        Map<String, Double> result = TriangulationCalculator.triangulateRates(baseRates);
+        assertEquals(1.1 / 0.009, result.get("EUR_JPY"), 1e-6);
+    }
 }

@@ -85,4 +85,13 @@ class FanChartCalculatorTest {
         assertTrue(result.get(0).p50Lo() >= 100 && result.get(0).p50Lo() <= 105);
         assertTrue(result.get(0).p50Hi() >= 105 && result.get(0).p50Hi() <= 109);
     }
+
+    @Test
+    void testPercentile_SingleValue() {
+        List<List<Double>> paths = new ArrayList<>();
+        paths.add(List.of(100.0));
+        List<FanChartCalculator.PathPoint> result = FanChartCalculator.generatePaths(paths);
+        assertEquals(1, result.size());
+        assertEquals(100.0, result.get(0).p50Lo(), 1e-6);
+    }
 }

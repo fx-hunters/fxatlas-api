@@ -16,6 +16,9 @@ import java.util.Objects;
  */
 public class FanChartCalculator {
 
+    private FanChartCalculator() {
+    }
+
     /**
      * 팬차트 경로점들을 생성한다.
      *
@@ -105,9 +108,6 @@ public class FanChartCalculator {
     }
 
     private static double percentile(List<Double> values, double p) {
-        if (values.isEmpty()) {
-            throw new IllegalArgumentException("values must not be empty");
-        }
         List<Double> sorted = new ArrayList<>(values);
         sorted.sort(null);
 

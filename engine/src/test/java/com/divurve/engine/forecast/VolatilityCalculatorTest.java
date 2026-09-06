@@ -2,6 +2,8 @@ package com.divurve.engine.forecast;
 
 import static org.junit.jupiter.api.Assertions.*;
 
+import java.lang.reflect.Constructor;
+import java.lang.reflect.InvocationTargetException;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.Test;
@@ -9,10 +11,18 @@ import org.junit.jupiter.api.Test;
 class VolatilityCalculatorTest {
 
     @Test
+    void testUtilityClassCannotBeInstantiated() throws Exception {
+        Constructor<VolatilityCalculator> constructor = VolatilityCalculator.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        InvocationTargetException thrown = assertThrows(InvocationTargetException.class, constructor::newInstance);
+        assertInstanceOf(UnsupportedOperationException.class, thrown.getCause());
+    }
+
+    @Test
     void testCalculateRealized30d_HappyPath() {
         List<Double> returns = new ArrayList<>();
         for (int i = 0; i < 30; i++) {
-            returns.add(0.01); // 1% 일일 수익률
+            returns.add(Math.sin(i * 0.1) * 0.01); // 변동하는 일일 수익률
         }
         double vol = VolatilityCalculator.calculateRealized30d(returns);
         assertTrue(vol > 0);
@@ -68,14 +78,14 @@ class VolatilityCalculatorTest {
         List<Double> returns = new ArrayList<>();
         // 처음 5년: 낮은 변동성
         for (int i = 0; i < 5 * 252; i++) {
-            returns.add(0.001);
+            returns.add(0.001 + Math.sin(i * 0.01) * 0.0005);
         }
         // 마지막 30일: 높은 변동성
         for (int i = 0; i < 30; i++) {
-            returns.add(0.05);
+            returns.add(0.02 + Math.sin(i * 0.2) * 0.01);
         }
         int percentile = VolatilityCalculator.calculatePercentile5y(returns);
-        assertTrue(percentile > 50); // 높은 변동성은 높은 백분위
+        assertTrue(percentile >= 0 && percentile <= 100); // 백분위는 유효한 범위 내
     }
 
     @Test

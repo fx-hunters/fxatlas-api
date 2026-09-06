@@ -12,6 +12,9 @@ import java.util.Objects;
  */
 public class ModelPerformanceCalculator {
 
+    private ModelPerformanceCalculator() {
+    }
+
     /**
      * 방향 적중률 (Direction Accuracy).
      *

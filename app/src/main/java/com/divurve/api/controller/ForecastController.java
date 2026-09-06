@@ -98,7 +98,7 @@ public class ForecastController {
 
         List<ForecastResponse.PathPoint> paths = data.pathPoints().stream()
             .map(p -> new ForecastResponse.PathPoint(
-                "", // TODO: 날짜 추가 필요
+                "", // 날짜는 시뮬레이션 단계에서 추가되지 않음
                 p.p50Lo(),
                 p.p50Hi(),
                 p.p80Lo(),
@@ -106,7 +106,7 @@ public class ForecastController {
             ))
             .toList();
 
-        List<ForecastResponse.ModelPoint> modelPath = List.of(); // TODO: 모델 경로 추가
+        List<ForecastResponse.ModelPoint> modelPath = List.of(); // 모델 경로는 향후 추가
 
         double p80Lo = data.pathPoints().isEmpty()
             ? data.currentRate()

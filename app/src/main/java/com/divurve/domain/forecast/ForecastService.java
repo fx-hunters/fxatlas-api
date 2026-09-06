@@ -60,9 +60,11 @@ public class ForecastService {
     /**
      * 팬차트·구간·변동성 조회.
      *
+     * <p>engine 계산 결과를 API 응답에 적합한 DTO로 변환한다.
+     *
      * @param pairCode 통화쌍 (USD_KRW, USD_JPY, EUR_USD 등)
      * @param horizonDays 미래 지평 (30 또는 90)
-     * @return 팬차트 데이터
+     * @return 팬차트 데이터 (DTO 형태)
      */
     public ForecastData getForecast(String pairCode, int horizonDays) {
         Objects.requireNonNull(pairCode, "pairCode must not be null");
@@ -93,8 +95,11 @@ public class ForecastService {
             NUM_SIMULATION_PATHS
         );
 
-        // 6. 경로 포인트 생성
-        List<FanChartCalculator.PathPoint> pathPoints = FanChartCalculator.generatePaths(paths);
+        // 6. 경로 포인트 생성 (engine → domain DTO 변환)
+        List<FanChartCalculator.PathPoint> enginePathPoints = FanChartCalculator.generatePaths(paths);
+        List<ForecastData.PathPoint> dtoPathPoints = enginePathPoints.stream()
+            .map(p -> new ForecastData.PathPoint("", p.p50Lo(), p.p50Hi(), p.p80Lo(), p.p80Hi()))
+            .toList();
 
         // 7. 기준선 (드리프트 0)
         List<Double> baseline = FanChartCalculator.generateBaseLine(currentRate, horizonDays);
@@ -106,7 +111,7 @@ public class ForecastService {
             currentRate,
             baseline,
             history,
-            pathPoints,
+            dtoPathPoints,
             realized30d,
             percentile5y,
             regime
@@ -209,7 +214,8 @@ public class ForecastService {
     // ── DTO들 ────────────────────────────────────
 
     /**
-     * 팬차트 데이터.
+     * 팬차트 데이터 (API 응답용 DTO).
+     * engine 계산 결과를 API 레이어에 적합한 형태로 변환한 결과.
      */
     public record ForecastData(
         String pairCode,
@@ -217,11 +223,22 @@ public class ForecastService {
         double currentRate,
         List<Double> baseline,
         List<FxRateHistoryProvider.HistoryRateSnapshot> history,
-        List<FanChartCalculator.PathPoint> pathPoints,
+        List<PathPoint> pathPoints,
         double realized30d,
         int percentile5y,
         String regime
     ) {
+        /**
+         * 팬차트 경로 포인트 (engine과 독립적인 DTO).
+         */
+        public record PathPoint(
+            String date,
+            double p50Lo,
+            double p50Hi,
+            double p80Lo,
+            double p80Hi
+        ) {
+        }
     }
 
     /**

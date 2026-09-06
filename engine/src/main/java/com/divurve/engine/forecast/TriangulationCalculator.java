@@ -17,6 +17,9 @@ import java.util.Objects;
  */
 public class TriangulationCalculator {
 
+    private TriangulationCalculator() {
+    }
+
     private static final String USD_KRW = "USD_KRW";
     private static final String USD_JPY = "USD_JPY";
     private static final String EUR_USD = "EUR_USD";

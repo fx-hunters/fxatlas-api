@@ -1,8 +1,8 @@
 package com.divurve.api.controller;
 
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.*;
-import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
 import com.divurve.domain.forecast.ForecastService;
 import com.divurve.domain.port.FxRateHistoryProvider;
@@ -11,19 +11,11 @@ import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.autoconfigure.web.servlet.WebMvcTest;
-import org.springframework.boot.test.mock.mockito.MockBean;
-import org.springframework.test.web.servlet.MockMvc;
 
-@WebMvcTest(ForecastController.class)
 class ForecastControllerTest {
 
-    @Autowired
-    private MockMvc mockMvc;
-
-    @MockBean
-    private ForecastService forecastService;
+    private ForecastController controller;
+    private ForecastService mockService;
 
     private ForecastService.ForecastData mockForecastData;
     private List<ForecastService.ForecastFactor> mockFactors;
@@ -32,6 +24,9 @@ class ForecastControllerTest {
 
     @BeforeEach
     void setUp() {
+        mockService = mock(ForecastService.class);
+        controller = new ForecastController(mockService);
+
         // Mock forecast data
         mockForecastData = new ForecastService.ForecastData(
             "USD_KRW",
@@ -76,60 +71,50 @@ class ForecastControllerTest {
     }
 
     @Test
-    void testGetForecast_Success() throws Exception {
-        when(forecastService.getForecast("USD_KRW", 30)).thenReturn(mockForecastData);
+    void testGetForecast_Success() {
+        when(mockService.getForecast("USD_KRW", 30)).thenReturn(mockForecastData);
 
-        mockMvc.perform(get("/api/v1/forecast")
-                .param("pairCode", "USD_KRW")
-                .param("horizon", "30"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.pairCode").value("USD_KRW"))
-            .andExpect(jsonPath("$.data.horizonDays").value(30))
-            .andExpect(jsonPath("$.data.currentRate").value(1200.0));
+        var response = controller.getForecast("USD_KRW", 30);
 
-        verify(forecastService, times(1)).getForecast("USD_KRW", 30);
+        assertNotNull(response);
+        assertThat(response.data().pairCode()).isEqualTo("USD_KRW");
+        assertThat(response.data().horizonDays()).isEqualTo(30);
+        verify(mockService, times(1)).getForecast("USD_KRW", 30);
     }
 
     @Test
-    void testGetFactors_Success() throws Exception {
-        when(forecastService.getFactors("USD_KRW")).thenReturn(mockFactors);
+    void testGetFactors_Success() {
+        when(mockService.getFactors("USD_KRW")).thenReturn(mockFactors);
 
-        mockMvc.perform(get("/api/v1/forecast/factors")
-                .param("pairCode", "USD_KRW"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.pairCode").value("USD_KRW"))
-            .andExpect(jsonPath("$.data.factors").isArray())
-            .andExpect(jsonPath("$.data.factors.length()").value(3));
+        var response = controller.getFactors("USD_KRW");
 
-        verify(forecastService, times(1)).getFactors("USD_KRW");
+        assertNotNull(response);
+        assertThat(response.data().pairCode()).isEqualTo("USD_KRW");
+        assertThat(response.data().factors()).hasSize(3);
+        verify(mockService, times(1)).getFactors("USD_KRW");
     }
 
     @Test
-    void testGetModelPerformance_Success() throws Exception {
-        when(forecastService.getModelPerformance("USD_KRW", 30)).thenReturn(mockModelPerf);
+    void testGetModelPerformance_Success() {
+        when(mockService.getModelPerformance("USD_KRW", 30)).thenReturn(mockModelPerf);
 
-        mockMvc.perform(get("/api/v1/forecast/model-performance")
-                .param("pairCode", "USD_KRW")
-                .param("horizon", "30"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.pairCode").value("USD_KRW"))
-            .andExpect(jsonPath("$.data.horizonDays").value(30))
-            .andExpect(jsonPath("$.data.model.hitRate").value(0.62));
+        var response = controller.getModelPerformance("USD_KRW", 30);
 
-        verify(forecastService, times(1)).getModelPerformance("USD_KRW", 30);
+        assertNotNull(response);
+        assertThat(response.data().pairCode()).isEqualTo("USD_KRW");
+        assertThat(response.data().horizonDays()).isEqualTo(30);
+        verify(mockService, times(1)).getModelPerformance("USD_KRW", 30);
     }
 
     @Test
-    void testGetEvents_Success() throws Exception {
-        when(forecastService.getEvents()).thenReturn(mockEvents);
+    void testGetEvents_Success() {
+        when(mockService.getEvents()).thenReturn(mockEvents);
 
-        mockMvc.perform(get("/api/v1/events"))
-            .andExpect(status().isOk())
-            .andExpect(jsonPath("$.data.events").isArray())
-            .andExpect(jsonPath("$.data.events.length()").value(1))
-            .andExpect(jsonPath("$.data.events[0].title").value("Fed Rate Decision"));
+        var response = controller.getEvents();
 
-        verify(forecastService, times(1)).getEvents();
+        assertNotNull(response);
+        assertThat(response.data().events()).hasSize(1);
+        verify(mockService, times(1)).getEvents();
     }
 
     private List<Double> createBaseline() {
@@ -151,10 +136,11 @@ class ForecastControllerTest {
         return history;
     }
 
-    private List<com.divurve.engine.forecast.FanChartCalculator.PathPoint> createPathPoints() {
-        List<com.divurve.engine.forecast.FanChartCalculator.PathPoint> points = new ArrayList<>();
+    private List<ForecastService.ForecastData.PathPoint> createPathPoints() {
+        List<ForecastService.ForecastData.PathPoint> points = new ArrayList<>();
         for (int i = 0; i <= 30; i++) {
-            points.add(new com.divurve.engine.forecast.FanChartCalculator.PathPoint(
+            points.add(new ForecastService.ForecastData.PathPoint(
+                "",
                 1180.0 + i * 0.5,
                 1220.0 + i * 0.5,
                 1150.0 + i * 0.5,

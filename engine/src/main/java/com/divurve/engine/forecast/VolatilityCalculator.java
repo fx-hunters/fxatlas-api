@@ -11,6 +11,10 @@ import java.util.Objects;
  */
 public class VolatilityCalculator {
 
+    private VolatilityCalculator() {
+        throw new UnsupportedOperationException("VolatilityCalculator is a utility class");
+    }
+
     private static final int REALIZED_30D_WINDOW = 30;
     private static final int PERCENTILE_5Y_WINDOW = 252 * 5; // 5년 영업일
     private static final int REGIME_SHORT_WINDOW = 30;
@@ -65,10 +69,6 @@ public class VolatilityCalculator {
             rollingVols.add(vol);
         }
 
-        if (rollingVols.isEmpty()) {
-            return 50;
-        }
-
         double currentVol = calculateRealized30d(dailyReturns);
         rollingVols.sort(null);
 
@@ -99,9 +99,7 @@ public class VolatilityCalculator {
     }
 
     private static double calculateVariance(List<Double> values) {
-        if (values.isEmpty()) {
-            return 0.0;
-        }
+        Objects.requireNonNull(values, "values must not be null");
         double mean = values.stream().mapToDouble(Double::doubleValue).average().orElse(0);
         double sumSquaredDiff = values.stream()
             .mapToDouble(v -> Math.pow(v - mean, 2))
