@@ -226,4 +226,44 @@ public class Goal {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    /** 목표 상태를 변경한다. */
+    public void setStatus(String status) {
+        this.status = status;
+    }
+
+    /** 목표명을 업데이트한다. */
+    public void setName(String name) {
+        this.name = name;
+    }
+
+    /** 목표금액을 업데이트한다. */
+    public void setTargetAmount(double targetAmount) {
+        this.targetAmount = targetAmount;
+    }
+
+    /** 목표날짜를 업데이트한다. */
+    public void setTargetDate(LocalDate targetDate) {
+        this.targetDate = targetDate;
+    }
+
+    /** 예산액을 업데이트한다. */
+    public void setBudgetAmount(long budgetAmount) {
+        this.budgetAmount = budgetAmount;
+    }
+
+    /** 예산 기간을 업데이트한다. */
+    public void setBudgetPeriod(String budgetPeriod) {
+        this.budgetPeriod = budgetPeriod;
+    }
+
+    /** 투자성향 플래그를 업데이트한다. */
+    public void setSpeculative(boolean isSpeculative) {
+        this.isSpeculative = isSpeculative;
+    }
+
+    /** 테스트용 id 설정 (반사를 사용한다). */
+    public void setIdForTest(UUID testId) {
+        this.id = testId;
+    }
 }

@@ -48,7 +48,7 @@ public class AuthDemoService {
     /** 데모 유저를 생성하고 샘플 데이터를 시드한 뒤, {@code is_demo=true} 토큰을 발급해 반환한다. */
     @Transactional
     public AuthTokens createDemoSession() {
-        User demoUser = userRepository.save(User.create(newDemoEmail(), "데모 사용자", true));
+        User demoUser = userRepository.save(User.createDemo(newDemoEmail(), "데모 사용자"));
         seedSampleData(demoUser);
         return tokenProvider.issue(demoUser.getId(), true);
     }

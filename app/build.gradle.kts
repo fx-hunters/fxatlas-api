@@ -30,6 +30,9 @@ dependencies {
     runtimeOnly("io.jsonwebtoken:jjwt-impl:0.12.6")
     runtimeOnly("io.jsonwebtoken:jjwt-jackson:0.12.6")
 
+    // 비밀번호 해싱 (이슈 #22) — BCryptPasswordEncoder 사용. Spring Security crypto 만 임포트.
+    implementation("org.springframework.security:spring-security-crypto:6.3.3")
+
     // 테스트
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
