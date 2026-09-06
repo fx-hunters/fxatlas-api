@@ -10,12 +10,11 @@ import java.util.List;
  * 계획 회차 관련 순수 계산 함수.
  * Spring/JPA 의존 없음. 모든 메서드는 상태를 변경하지 않는 순수 함수.
  *
- * <p><b>⚠ 요구사항 v2 §4.12 미확정</b> — 달성 확률의 정의 자체가 미확정이므로
- * {@link #calculateAchieveProbAfterSkip} 의 선형 휴리스틱은 <b>후보일 뿐 확정 요구사항이 아니다</b>.
- * 계산기는 남겨 두되 {@code route.enabled} 가 꺼진 동안에는 호출되지 않는다 — {@code /api/v1/plans/*}
- * 가 501 을 반환한다(명세 v2 §6).
+ * <p>달성 확률 휴리스틱({@code calculateAchieveProbAfterSkip})은 <b>삭제했다</b> (이슈 #83).
+ * 플래너 명세 §23 이 {@code achieveProb} 의 산식·학습·검증 근거를 전부 불명으로 지목했고,
+ * §24 는 MVP 계산 정책에서 확률 모델을 빼고 균등 회차와 환율 범위 비용만 채택했다.
  *
- * <p>v1 의 {@code shouldTriggerSafeMode(연속 건너뛰기 ≥ 3 → 안전모드)} 는 <b>삭제했다</b>.
+ * <p>v1 의 {@code shouldTriggerSafeMode(연속 건너뛰기 ≥ 3 → 안전모드)} 도 삭제했다.
  * v1 안전모드 기능 자체가 v2 에서 제거됐고, 임계치 3 역시 §4.12 의 미확정 값이었다.
  */
 public class PlanCalculator {
@@ -81,24 +80,6 @@ public class PlanCalculator {
 
         double newAmount = Math.max(0.0, remainingAmount) / remainingSteps;
         return (newAmount - currentAmount) / currentAmount;
-    }
-
-    /**
-     * 건너뛰기로 인한 달성 확률 변화 계산 (단순 휴리스틱).
-     * 회차 수가 줄어들수록 달성 확률이 선형으로 감소한다고 가정.
-     * achieveProb_new = achieveProb_old * (remainingSteps / totalSteps)
-     *
-     * @param currentAchieveProb 현재 달성 확률 (0.0 ~ 1.0)
-     * @param totalSteps         전체 회차수
-     * @param remainingSteps     남은 회차수
-     * @return 변경 후 달성 확률
-     */
-    public static double calculateAchieveProbAfterSkip(
-            double currentAchieveProb, int totalSteps, int remainingSteps) {
-        if (totalSteps <= 0) {
-            return 0.0;
-        }
-        return currentAchieveProb * ((double) remainingSteps / totalSteps);
     }
 
     /**

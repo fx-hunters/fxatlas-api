@@ -8,6 +8,13 @@ import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.cost.EffectiveSpreadCalculator;
 import com.divurve.engine.diversification.DiversificationSimulator;
 import com.divurve.engine.fx.CrossRateDeriver;
+import com.divurve.engine.planner.BudgetFeasibilityEvaluator;
+import com.divurve.engine.planner.BusinessDayCalendar;
+import com.divurve.engine.planner.EqualSplitAllocator;
+import com.divurve.engine.planner.ExchangeCostCalculator;
+import com.divurve.engine.planner.RecurringAcquisitionCalculator;
+import com.divurve.engine.planner.RoundScheduleGenerator;
+import com.divurve.engine.planner.SkipRedistributor;
 import com.divurve.engine.riskprofile.DetailDiagnosisMapper;
 import com.divurve.engine.riskprofile.RiskProfileScorer;
 import com.divurve.engine.simulate.MonteCarloSimulator;
@@ -131,5 +138,44 @@ public class EngineConfig {
     @Bean
     public MarketChecks marketChecks() {
         return new MarketChecks();
+    }
+
+    // 이슈 #83 플래너 계산 엔진 (플래너 명세 §9·§10·§15). 안전/기회 버킷 + 몬테카를로 모델을
+    // 대체한다 — 명세 §23 이 그 값들을 산출 근거 불명으로 지목했고 §24 가 균등 회차를 확정했다.
+
+    @Bean
+    public BusinessDayCalendar businessDayCalendar() {
+        return new BusinessDayCalendar();
+    }
+
+    @Bean
+    public RoundScheduleGenerator roundScheduleGenerator() {
+        return new RoundScheduleGenerator();
+    }
+
+    @Bean
+    public EqualSplitAllocator equalSplitAllocator() {
+        return new EqualSplitAllocator();
+    }
+
+    @Bean
+    public ExchangeCostCalculator exchangeCostCalculator() {
+        return new ExchangeCostCalculator();
+    }
+
+    @Bean
+    public BudgetFeasibilityEvaluator budgetFeasibilityEvaluator() {
+        return new BudgetFeasibilityEvaluator();
+    }
+
+    @Bean
+    public RecurringAcquisitionCalculator recurringAcquisitionCalculator(
+            ExchangeCostCalculator exchangeCostCalculator) {
+        return new RecurringAcquisitionCalculator(exchangeCostCalculator);
+    }
+
+    @Bean
+    public SkipRedistributor skipRedistributor(EqualSplitAllocator equalSplitAllocator) {
+        return new SkipRedistributor(equalSplitAllocator);
     }
 }
