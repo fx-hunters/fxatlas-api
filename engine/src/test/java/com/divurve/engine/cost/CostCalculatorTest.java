@@ -60,6 +60,13 @@ class CostCalculatorTest {
     }
 
     @Test
+    void spreadCost_OverOneSpreadRatio_ThrowsIllegalArgumentException() {
+        assertThatThrownBy(() -> calculator.spreadCost(1000.0, 1.1))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("0.0~1.0");
+    }
+
+    @Test
     void fixedCost_CalculatesCorrectly() {
         long fixed = calculator.fixedCost(4, 3000);
 
@@ -99,6 +106,34 @@ class CostCalculatorTest {
         assertThatThrownBy(() -> calculator.totalCost(1000.0, 0.005, 4, -100))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("음수");
+    }
+
+    @Test
+    void totalCost_NegativeSpreadRatio_ThrowsIllegalArgumentException() {
+        assertThatThrownBy(() -> calculator.totalCost(1000.0, -0.001, 4, 3000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("0.0~1.0");
+    }
+
+    @Test
+    void totalCost_OverOneSpreadRatio_ThrowsIllegalArgumentException() {
+        assertThatThrownBy(() -> calculator.totalCost(1000.0, 1.5, 4, 3000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("0.0~1.0");
+    }
+
+    @Test
+    void totalCost_ZeroSplitCount_ThrowsIllegalArgumentException() {
+        assertThatThrownBy(() -> calculator.totalCost(1000.0, 0.005, 0, 3000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1 이상");
+    }
+
+    @Test
+    void totalCost_NegativeSplitCount_ThrowsIllegalArgumentException() {
+        assertThatThrownBy(() -> calculator.totalCost(1000.0, 0.005, -1, 3000))
+                .isInstanceOf(IllegalArgumentException.class)
+                .hasMessageContaining("1 이상");
     }
 
     @Test

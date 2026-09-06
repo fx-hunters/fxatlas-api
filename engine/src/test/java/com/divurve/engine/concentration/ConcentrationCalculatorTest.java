@@ -152,4 +152,32 @@ class ConcentrationCalculatorTest {
         assertThat(report.after().values().stream().mapToDouble(Double::doubleValue).sum())
                 .isCloseTo(1.0, org.assertj.core.api.Assertions.within(0.001));
     }
+
+    @Test
+    void report_EmptyBefore_ReturnsReport() {
+        Map<String, Double> before = new HashMap<>();
+
+        Map<String, Double> after = new HashMap<>();
+        after.put("USD", 1000.0);
+
+        var report = calculator.report(before, after);
+
+        assertThat(report.before()).isEmpty();
+        assertThat(report.after()).hasSize(1);
+        assertThat(report.verdict()).isEqualTo("worsens");
+    }
+
+    @Test
+    void report_EmptyAfter_ReturnsReport() {
+        Map<String, Double> before = new HashMap<>();
+        before.put("USD", 1000.0);
+
+        Map<String, Double> after = new HashMap<>();
+
+        var report = calculator.report(before, after);
+
+        assertThat(report.before()).hasSize(1);
+        assertThat(report.after()).isEmpty();
+        assertThat(report.verdict()).isEqualTo("improves");
+    }
 }
