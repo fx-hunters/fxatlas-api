@@ -23,7 +23,7 @@ class StubEndpointsTest {
     // risk-profile/settings 는 실구현되어 이 스텁 목록에서 제외 — MeControllerTest 가 매핑을 검증한다.
     // 남은 스텁(getProfile/updateProfile/updateNotifications)은 서비스를 건드리지 않으므로 null 로 충분하다.
     private final MeController me = new MeController(null, null);
-    private final AssetController asset = new AssetController();
+    // holdings/deposits 는 실구현되어 이 스텁 목록에서 제외 — AssetControllerTest 가 매핑을 검증한다.
     private final XrayController xray = new XrayController();
     private final FitController fit = new FitController();
     private final ForecastController forecast = new ForecastController();
@@ -44,13 +44,6 @@ class StubEndpointsTest {
                 me::getProfile,
                 () -> me.updateProfile(null),
                 () -> me.updateNotifications(null),
-                // Asset
-                asset::listHoldings,
-                () -> asset.createHolding(null),
-                () -> asset.updateHolding("id", null),
-                () -> asset.deleteHolding("id"),
-                asset::listDeposits,
-                () -> asset.createDeposit(null),
                 // X-ray
                 xray::getXray,
                 () -> xray.getAttribution(null, null),

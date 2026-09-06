@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.divurve.domain.RepositoryTestBase;
 import com.divurve.domain.holding.entity.Deposit;
+import com.divurve.domain.holding.entity.PurchaseFxRate;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
 import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -41,5 +43,21 @@ class DepositRepositoryTest extends RepositoryTestBase {
         assertThat(depositRepository.findByOwner_Id(owner.getId()))
             .singleElement()
             .satisfies(d -> assertThat(d.getAmount()).isEqualByComparingTo("12.3456"));
+    }
+
+    @Test
+    void 매입_환율_컨텍스트를_보존한다() {
+        User owner = userRepository.save(User.create("dave-d@divurve.com", "데이브", false));
+        Deposit deposit = Deposit.create(owner, "USD", new BigDecimal("500.0000"));
+        LocalDate purchasedAt = LocalDate.of(2025, 6, 1);
+        deposit.assignPurchaseContext(
+                purchasedAt, new PurchaseFxRate(new BigDecimal("1380.5000"), "ECOS", purchasedAt.minusDays(1)));
+        Deposit saved = depositRepository.save(deposit);
+
+        Deposit found = depositRepository.findById(saved.getId()).orElseThrow();
+        assertThat(found.getPurchasedAt()).isEqualTo(purchasedAt);
+        assertThat(found.getPurchaseFxRateKrw()).isEqualByComparingTo("1380.5000");
+        assertThat(found.getPurchaseFxRateSource()).isEqualTo("ECOS");
+        assertThat(found.getPurchaseFxRateAsOf()).isEqualTo(purchasedAt.minusDays(1));
     }
 }
