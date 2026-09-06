@@ -21,7 +21,7 @@ AI는 두 가지에만 쓴다:
 ## 2. AI가 적절한 사용처
 
 ### 2.1 계산 결과 설명 (전 화면 공통 서술 계층)
-계산 엔진(몬테카를로·손익 분해·버킷 배분)이 만든 숫자를, 사용자의 `display_mode`(초보자/전문가)와 `explain_domain`(finance/dev/marketing/plain 비유 도메인)에 맞춰 자연어로 풀어 쓴다.
+계산 엔진(몬테카를로·손익 분해·버킷 배분)이 만든 숫자를, 사용자의 `explain_level`(simple/standard/detailed = 설명 선호 3단계)과 `explain_domain`(finance/dev/marketing/plain 비유 도메인)에 맞춰 자연어로 풀어 쓴다.
 - **입력**: 계산 엔진 출력 JSON (예: `{code:"high_vol", vol_percentile:0.88}`)
 - **출력**: 고정 스키마 설명 텍스트 (예: "변동성이 5년 상위 12%입니다. 분할 횟수를 늘리는 것을 고려하세요.")
 - **안전장치**: 수치 필드를 엔진 원본과 대조해 불일치 시 폐기·재생성(NFR-AI-02), 단정적 방향/투자 권유 표현 후처리 차단(NFR-AI-03), `audit_logs`에 `action='ai_explained'`로 프롬프트·응답 전문 기록
@@ -64,7 +64,7 @@ AI는 두 가지에만 쓴다:
 2. **고정 스키마 + 수치 대조**: 구조화 출력으로 받고, 숫자 필드는 원본과 대조해 불일치 시 폐기·재생성.
 3. **표현 후처리 필터**: 단정적 방향 표현("오를 것입니다")·투자 권유 표현을 차단.
 4. **출처·감사 기록**: 모든 AI 산출물은 `audit_logs`(서술) 또는 `source_url`/`fetched_at`/`extraction_method`(추출)로 근거를 남긴다.
-5. **표현 파라미터와 계산 파라미터 분리**: `display_mode`·`explain_domain` 같은 AI 프롬프트용 설정값은 절대 계산 로직에 들어가지 않는다.
+5. **표현 파라미터와 계산 파라미터 분리**: `explain_level`·`explain_domain` 같은 AI 프롬프트용 설정값은 절대 계산 로직에 들어가지 않는다.
 
 ## 참고 문서
 - 요구사항 정의서 — 예측의 세 층위, NFR-AI, FR-FC-12

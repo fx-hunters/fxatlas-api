@@ -75,7 +75,7 @@ Authorization: Bearer {access_token}
 |---|---|---|
 | GET/PUT | /me | 프로필 조회/수정 |
 | GET/PUT | /me/risk-profile | 투자성향 조회/재진단 |
-| GET/PUT | /me/settings | `default_bank_code`·`fx_discount_ratio`·`display_mode` |
+| GET/PUT | /me/settings | `default_bank_code`·`fx_discount_ratio`·`explain_level`·`explain_domain` |
 | PUT | /me/notifications | 알림 설정 |
 
 **자산**
