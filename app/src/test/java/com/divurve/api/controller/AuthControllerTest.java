@@ -39,9 +39,8 @@ class AuthControllerTest {
 
     @Test
     void 가입_직후에는_onboarded_가_false_다() {
-        SignupRequest request = new SignupRequest(
-                "user@example.com", "password123", "User Name", "OVERSEAS_INVESTMENT");
-        when(authService.signup("user@example.com", "password123", "User Name", "OVERSEAS_INVESTMENT"))
+        SignupRequest request = new SignupRequest("user@example.com", "password123", "User Name");
+        when(authService.signup("user@example.com", "password123", "User Name"))
                 .thenReturn(new AuthTokens("access-token", "refresh-token", 1800L));
 
         ApiResponse<TokenResponse> response = controller().signup(request);

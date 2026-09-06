@@ -66,7 +66,7 @@ class XrayServiceTest {
     private FxRateProvider fxRateProvider;
 
     private final UUID userId = UUID.randomUUID();
-    private final User user = User.create("me@divurve.com", "나", null, null);
+    private final User user = User.create("me@divurve.com", "나", null);
 
     private XrayService service() {
         return new XrayService(

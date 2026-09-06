@@ -247,7 +247,7 @@ class StressRunServiceTest {
     }
 
     private static User testUser() {
-        return User.create("test@divurve.local", "테스트", "hash", null);
+        return User.create("test@divurve.local", "테스트", "hash");
     }
 
     private static Holding holding(String currencyCode, double amountLocal) {
