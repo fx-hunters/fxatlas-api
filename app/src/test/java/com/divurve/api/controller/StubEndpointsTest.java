@@ -24,6 +24,9 @@ class StubEndpointsTest {
     // 남은 스텁(getProfile/updateProfile/updateNotifications)은 서비스를 건드리지 않으므로 null 로 충분하다.
     private final MeController me = new MeController(null, null);
     // holdings/deposits 는 실구현되어 이 스텁 목록에서 제외 — AssetControllerTest 가 매핑을 검증한다.
+    private final XrayController xray = new XrayController();
+    private final FitController fit = new FitController();
+    // forecast 는 실구현되어 이 스텁 목록에서 제외 — ForecastControllerTest 가 매핑을 검증한다.
     // xray/fit 은 이슈 #14에서 실구현되어 이 스텁 목록에서 제외 — XrayControllerTest/FitControllerTest 가 매핑을 검증한다.
     private final ForecastController forecast = new ForecastController();
     private final GoalController goal = new GoalController();
@@ -43,6 +46,13 @@ class StubEndpointsTest {
                 me::getProfile,
                 () -> me.updateProfile(null),
                 () -> me.updateNotifications(null),
+                // X-ray
+                xray::getXray,
+                () -> xray.getAttribution(null, null),
+                () -> xray.applyStress(null),
+                // Fit
+                fit::getConcentration,
+                () -> fit.simulate(null),
                 // Forecast
                 () -> forecast.getForecast(null, null),
                 () -> forecast.getFactors(null),
