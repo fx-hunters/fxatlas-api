@@ -1,11 +1,9 @@
 package com.divurve.domain.holding;
 
 import com.divurve.common.architecture.UseCase;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
-import com.divurve.domain.port.FxRateProvider;
-import com.divurve.domain.port.RateSnapshot;
-import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Comparator;
@@ -28,13 +26,10 @@ import java.util.Objects;
 @UseCase
 public class FxAssetValuator {
 
-    private final FxRateProvider fxRateProvider;
-    private final QuoteUnitNormalizer quoteUnitNormalizer;
+    private final PerUnitFxRates perUnitFxRates;
 
-    public FxAssetValuator(FxRateProvider fxRateProvider, QuoteUnitNormalizer quoteUnitNormalizer) {
-        this.fxRateProvider = Objects.requireNonNull(fxRateProvider, "fxRateProvider is null");
-        this.quoteUnitNormalizer =
-                Objects.requireNonNull(quoteUnitNormalizer, "quoteUnitNormalizer is null");
+    public FxAssetValuator(PerUnitFxRates perUnitFxRates) {
+        this.perUnitFxRates = Objects.requireNonNull(perUnitFxRates, "perUnitFxRates is null");
     }
 
     /**
@@ -85,14 +80,18 @@ public class FxAssetValuator {
         return rates;
     }
 
+    /**
+     * 통화 하나의 환율을 채운다. 조회 실패는 그 통화만 빠뜨리고 나머지는 그대로 계산한다.
+     *
+     * <p>판정과 로깅은 {@link PerUnitFxRates#find} 한 곳에서 한다 — 예전에는 이 로직이
+     * {@code ForecastService}·{@code StressRunService} 에도 복사돼 있었고, 사본마다 처리가 달라
+     * 같은 GBP 보유 상태에서 {@code /xray} 는 200, {@code /stress/runs} 는 400 이었다(이슈 #57).
+     */
     private void putRate(Map<String, BigDecimal> rates, String currencyCode) {
         if (rates.containsKey(currencyCode)) {
             return;
         }
-        RateSnapshot snapshot = fxRateProvider.fetchLatest(currencyCode + "_KRW");
-        if (snapshot != null) {
-            rates.put(currencyCode, quoteUnitNormalizer.toPerUnitRate(currencyCode, snapshot.rate()));
-        }
+        perUnitFxRates.find(currencyCode).ifPresent(rate -> rates.put(currencyCode, rate));
     }
 
     /** 원화는 정수다(ERD 설계원칙) — 절사가 아니라 반올림한다. */

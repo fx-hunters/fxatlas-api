@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.Mockito.when;
 
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
 import com.divurve.domain.port.FxRateProvider;
@@ -37,7 +38,7 @@ class FxAssetValuatorTest {
     private final User user = User.createDemo("me@divurve.com", "나");
 
     private FxAssetValuator valuator() {
-        return new FxAssetValuator(fxRateProvider, new QuoteUnitNormalizer());
+        return new FxAssetValuator(new PerUnitFxRates(fxRateProvider, new QuoteUnitNormalizer()));
     }
 
     @Test
@@ -95,6 +96,23 @@ class FxAssetValuatorTest {
 
         assertThat(valuation.currencyToAssetKrw()).isEmpty();
         assertThat(valuation.fxAssetKrw()).isZero();
+    }
+
+    @Test
+    @DisplayName("어댑터가 지원하지 않는 통화는 그 통화만 빠지고 나머지는 그대로 계산된다 (이슈 #57)")
+    void 지원하지_않는_통화가_있어도_나머지는_계산된다() {
+        // CurrencyMaster 는 GBP 를 노출하지만 ECOS item-code 에는 없다 —
+        // 예외를 그대로 올리면 GBP 보유 하나 때문에 /xray 전체가 400 이 됐다.
+        givenRate("USD", "1382.40");
+        when(fxRateProvider.fetchLatest("GBP_KRW"))
+                .thenThrow(new IllegalArgumentException("Unsupported pairCode for ECOS: GBP_KRW"));
+
+        FxAssetValuator.FxValuation valuation = valuator().valuate(
+                List.of(Holding.create(user, "VOD", "GBP", 10, 100)),
+                List.of(Deposit.create(user, "USD", new BigDecimal("1000"))));
+
+        assertThat(valuation.currencyToAssetKrw()).containsOnlyKeys("USD");
+        assertThat(valuation.currencyToAssetKrw().get("USD")).isEqualTo(1_382_400L);
     }
 
     @Test

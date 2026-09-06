@@ -2,26 +2,24 @@ package com.divurve.domain.forecast;
 
 import com.divurve.common.architecture.UseCase;
 import com.divurve.common.exception.InvalidRequestException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.DepositRepository;
 import com.divurve.domain.holding.HoldingRepository;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
 import com.divurve.domain.port.EconomicEventProvider;
 import com.divurve.domain.port.FxRateHistoryProvider;
-import com.divurve.domain.port.FxRateProvider;
 import com.divurve.engine.forecast.FanChartCalculator;
 import com.divurve.engine.forecast.ModelPerformanceCalculator;
 import com.divurve.engine.forecast.VolatilityCalculator;
 import com.divurve.engine.volatility.Regime;
 import com.divurve.engine.volatility.RegimeClassifier;
-import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -62,8 +60,12 @@ public class ForecastService {
     /** 응답 {@code history} 로 내려보낼 최근 관측 수. */
     private static final int HISTORY_POINTS = 90;
 
-    /** 5년 백분위 계산에 필요한 관측 구간(영업일) + 30일 롤링 윈도. */
-    private static final int HISTORY_WINDOW_DAYS = 5 * 252 + 30;
+    /** 5년 백분위 계산에 필요한 관측 수(영업일) + 30일 롤링 윈도. */
+    private static final int REQUIRED_OBSERVATIONS = 5 * HistoryWindow.BUSINESS_DAYS_PER_YEAR + 30;
+
+    /** 위 관측 수를 확보하기 위해 어댑터에 요청할 조회 구간(달력일). 단위 혼동은 이슈 #57 참고. */
+    private static final int HISTORY_LOOKBACK_CALENDAR_DAYS =
+            HistoryWindow.calendarDaysFor(REQUIRED_OBSERVATIONS);
 
     /** 워크포워드 검증 폴드 수 (명세 §5.8 예시와 같은 24개월). */
     private static final int VALIDATION_FOLDS = 24;
@@ -87,31 +89,28 @@ public class ForecastService {
     public static final String PERFORMANCE_NOTE =
             "구간 포함률은 구간을 넓히면 쉽게 오르므로 평균 구간 폭과 함께 봐야 합니다.";
 
-    private final FxRateProvider fxRateProvider;
-    private final FxRateHistoryProvider historyProvider;
+    private final CrossRateResolver crossRateResolver;
+    private final PerUnitFxRates perUnitFxRates;
     private final EconomicEventProvider eventProvider;
     private final HoldingRepository holdingRepository;
     private final DepositRepository depositRepository;
     private final RegimeClassifier regimeClassifier;
-    private final QuoteUnitNormalizer quoteUnitNormalizer;
     private final Clock clock;
 
     public ForecastService(
-            FxRateProvider fxRateProvider,
-            FxRateHistoryProvider historyProvider,
+            CrossRateResolver crossRateResolver,
+            PerUnitFxRates perUnitFxRates,
             EconomicEventProvider eventProvider,
             HoldingRepository holdingRepository,
             DepositRepository depositRepository,
             RegimeClassifier regimeClassifier,
-            QuoteUnitNormalizer quoteUnitNormalizer,
             Clock clock) {
-        this.fxRateProvider = Objects.requireNonNull(fxRateProvider, "fxRateProvider");
-        this.historyProvider = Objects.requireNonNull(historyProvider, "historyProvider");
+        this.crossRateResolver = Objects.requireNonNull(crossRateResolver, "crossRateResolver");
+        this.perUnitFxRates = Objects.requireNonNull(perUnitFxRates, "perUnitFxRates");
         this.eventProvider = Objects.requireNonNull(eventProvider, "eventProvider");
         this.holdingRepository = Objects.requireNonNull(holdingRepository, "holdingRepository");
         this.depositRepository = Objects.requireNonNull(depositRepository, "depositRepository");
         this.regimeClassifier = Objects.requireNonNull(regimeClassifier, "regimeClassifier");
-        this.quoteUnitNormalizer = Objects.requireNonNull(quoteUnitNormalizer, "quoteUnitNormalizer");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -131,14 +130,14 @@ public class ForecastService {
         validateHorizon(horizonDays);
 
         List<FxRateHistoryProvider.HistoryRateSnapshot> history =
-                historyProvider.fetchHistorical(pair.providerCode(), LocalDate.now(clock), HISTORY_WINDOW_DAYS);
+                crossRateResolver.fetch(pair, LocalDate.now(clock), HISTORY_LOOKBACK_CALENDAR_DAYS);
         List<Double> dailyReturns = toDailyReturns(history);
 
         double vol30d = realized30d(dailyReturns);
         double volPercentile5y = percentile5y(dailyReturns);
         Regime regime = regimeClassifier.classify(volPercentile5y);
 
-        double currentRate = fxRateProvider.fetchLatest(pair.providerCode()).rate().doubleValue();
+        double currentRate = crossRateResolver.latestRate(pair);
         // 드리프트 0 이므로 기준선(계산에 쓰이는 유일한 중앙값)은 현재 환율과 같다 — L1.
         double baseRate = currentRate;
         // 관측이 비어 있으면 위 변동성 계산에서 이미 400 이 나갔으므로 여기서는 마지막 관측이 반드시 있다.
@@ -203,7 +202,7 @@ public class ForecastService {
         validateHorizon(horizonDays);
 
         List<FxRateHistoryProvider.HistoryRateSnapshot> history =
-                historyProvider.fetchHistorical(pair.providerCode(), LocalDate.now(clock), HISTORY_WINDOW_DAYS);
+                crossRateResolver.fetch(pair, LocalDate.now(clock), HISTORY_LOOKBACK_CALENDAR_DAYS);
         List<Double> dailyReturns = toDailyReturns(history);
 
         List<Double> baseRates = new ArrayList<>();
@@ -320,8 +319,9 @@ public class ForecastService {
                 .formatted(pairCode, (1.0 - volPercentile5y) * 100);
     }
 
+    /** {@link CrossRateResolver} 가 null 을 돌려주지 않으므로 여기서는 길이만 본다. */
     private static List<Double> toDailyReturns(List<FxRateHistoryProvider.HistoryRateSnapshot> history) {
-        if (history == null || history.size() < 2) {
+        if (history.size() < 2) {
             return List.of();
         }
         List<Double> returns = new ArrayList<>(history.size() - 1);
@@ -355,26 +355,25 @@ public class ForecastService {
             return 0L;
         }
 
-        Map<String, BigDecimal> rateCache = new HashMap<>();
+        // 조회는 PerUnitFxRates 한 곳을 거친다 — 예전에는 이 두 줄이 StressRunService·
+        // FxAssetValuator 에도 복사돼 있었다(이슈 #57). 이 통화의 환율은 기준선(latestRate)에서
+        // 이미 확보된 것이므로 여기서 다시 실패할 여지는 없다.
+        BigDecimal rate = perUnitFxRates.require(currencyCode);
+
         long total = 0L;
         for (Holding holding : holdings) {
             total += BigDecimal.valueOf(holding.getQuantity() * holding.getAvgPrice())
-                    .multiply(perUnitRate(rateCache, currencyCode))
+                    .multiply(rate)
                     .setScale(0, RoundingMode.HALF_UP)
                     .longValue();
         }
         for (Deposit deposit : deposits) {
             total += deposit.getAmount()
-                    .multiply(perUnitRate(rateCache, currencyCode))
+                    .multiply(rate)
                     .setScale(0, RoundingMode.HALF_UP)
                     .longValue();
         }
         return total;
-    }
-
-    private BigDecimal perUnitRate(Map<String, BigDecimal> cache, String currencyCode) {
-        return cache.computeIfAbsent(currencyCode, code -> quoteUnitNormalizer.toPerUnitRate(
-                code, fxRateProvider.fetchLatest(code + "_KRW").rate()));
     }
 
     // ── 도메인 뷰 ────────────────────────────────────────────────

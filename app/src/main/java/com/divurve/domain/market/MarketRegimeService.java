@@ -1,6 +1,8 @@
 package com.divurve.domain.market;
 
 import com.divurve.common.architecture.UseCase;
+import com.divurve.domain.forecast.CrossRateResolver;
+import com.divurve.domain.forecast.HistoryWindow;
 import com.divurve.domain.forecast.PairCode;
 import com.divurve.domain.port.FxRateHistoryProvider;
 import com.divurve.engine.forecast.VolatilityCalculator;
@@ -37,32 +39,38 @@ public class MarketRegimeService {
     /**
      * 상태를 판정할 통화쌍 (명세 §4 "저장 통화쌍").
      *
-     * <p>⚠️ 현재 외부 데이터 어댑터(ECOS)는 원화 크로스만 제공하므로 {@code USDJPY}·{@code EURUSD} 는
-     * 조회가 실패한다. 실패한 통화쌍은 {@code pair_regimes} 에서 <b>빠진다</b> — 없는 근거를 만들지
-     * 않는다(FR-CM-10). 삼각 유도로 채우는 것은 별도 과제다.
+     * <p>ECOS 는 원화 크로스만 고시하므로 {@code USDJPY}·{@code EURUSD} 는
+     * {@link CrossRateResolver} 가 두 원화 크로스의 비로 유도한다(명세 §1.4, 이슈 #57).
+     * 그래도 조회에 실패한 통화쌍은 {@code pair_regimes} 에서 <b>빠진다</b> —
+     * 없는 근거를 만들지 않는다(FR-CM-10).
      */
     public static final List<String> PAIR_CODES = List.of("USDKRW", "USDJPY", "EURUSD");
 
-    /** 5년 백분위 계산에 필요한 최소 관측 구간(영업일) + 30일 롤링 윈도. */
-    private static final int HISTORY_WINDOW_DAYS = 5 * 252 + 30;
+    /** 5년 백분위 계산에 필요한 최소 관측 수(영업일) + 30일 롤링 윈도. */
+    private static final int REQUIRED_OBSERVATIONS =
+            5 * HistoryWindow.BUSINESS_DAYS_PER_YEAR + 30;
+
+    /** 위 관측 수를 확보하기 위해 어댑터에 요청할 조회 구간(달력일). 단위 혼동은 이슈 #57 참고. */
+    private static final int HISTORY_LOOKBACK_CALENDAR_DAYS =
+            HistoryWindow.calendarDaysFor(REQUIRED_OBSERVATIONS);
 
     /** 명세 §5.10 {@code anomaly.note}. 데이터 오류와 실제 시장 충격을 구분한다(FR-SF-06). */
     public static final String ANOMALY_NOTE =
             "데이터 오류와 실제 시장 충격은 구분하며 실제 충격은 삭제하지 않습니다.";
 
-    private final FxRateHistoryProvider historyProvider;
+    private final CrossRateResolver historyResolver;
     private final RegimeClassifier regimeClassifier;
     private final RegimeBadgeMapper badgeMapper;
     private final MarketChecks marketChecks;
     private final Clock clock;
 
     public MarketRegimeService(
-            FxRateHistoryProvider historyProvider,
+            CrossRateResolver historyResolver,
             RegimeClassifier regimeClassifier,
             RegimeBadgeMapper badgeMapper,
             MarketChecks marketChecks,
             Clock clock) {
-        this.historyProvider = Objects.requireNonNull(historyProvider, "historyProvider");
+        this.historyResolver = Objects.requireNonNull(historyResolver, "historyResolver");
         this.regimeClassifier = Objects.requireNonNull(regimeClassifier, "regimeClassifier");
         this.badgeMapper = Objects.requireNonNull(badgeMapper, "badgeMapper");
         this.marketChecks = Objects.requireNonNull(marketChecks, "marketChecks");
@@ -176,10 +184,9 @@ public class MarketRegimeService {
 
     private List<FxRateHistoryProvider.HistoryRateSnapshot> fetchHistoryOrEmpty(PairCode pair) {
         try {
-            return historyProvider.fetchHistorical(
-                    pair.providerCode(), LocalDate.now(clock), HISTORY_WINDOW_DAYS);
+            return historyResolver.fetch(pair, LocalDate.now(clock), HISTORY_LOOKBACK_CALENDAR_DAYS);
         } catch (RuntimeException e) {
-            // 어댑터가 지원하지 않는 통화쌍. 판정에서 빠질 뿐 다른 통화쌍의 응답을 막지 않는다(FR-SF-01).
+            // 조회에 실패한 통화쌍. 판정에서 빠질 뿐 다른 통화쌍의 응답을 막지 않는다(FR-SF-01).
             return List.of();
         }
     }

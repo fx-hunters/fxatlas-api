@@ -8,6 +8,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
+import com.divurve.domain.forecast.CrossRateResolver;
+import com.divurve.domain.forecast.PairCode;
 import com.divurve.domain.port.FxRateHistoryProvider;
 import com.divurve.engine.volatility.MarketChecks;
 import com.divurve.engine.volatility.RegimeBadgeMapper;
@@ -39,14 +41,14 @@ class MarketRegimeServiceTest {
     private static final int LONG_HISTORY = 1400;
 
     @Mock
-    private FxRateHistoryProvider historyProvider;
+    private CrossRateResolver historyResolver;
 
     private MarketRegimeService service;
 
     @BeforeEach
     void setUp() {
         service = new MarketRegimeService(
-                historyProvider,
+                historyResolver,
                 new RegimeClassifier(),
                 new RegimeBadgeMapper(),
                 new MarketChecks(),
@@ -172,12 +174,12 @@ class MarketRegimeServiceTest {
     // ── 픽스처 ───────────────────────────────────────────────────
 
     private void givenHistory(String providerCode, List<FxRateHistoryProvider.HistoryRateSnapshot> history) {
-        when(historyProvider.fetchHistorical(eq(providerCode), any(LocalDate.class), anyInt()))
+        when(historyResolver.fetch(eq(PairCode.parse(providerCode)), any(LocalDate.class), anyInt()))
                 .thenReturn(history);
     }
 
     private void givenUnsupported(String providerCode) {
-        when(historyProvider.fetchHistorical(eq(providerCode), any(LocalDate.class), anyInt()))
+        when(historyResolver.fetch(eq(PairCode.parse(providerCode)), any(LocalDate.class), anyInt()))
                 .thenThrow(new IllegalArgumentException("Unsupported pairCode: " + providerCode));
     }
 
