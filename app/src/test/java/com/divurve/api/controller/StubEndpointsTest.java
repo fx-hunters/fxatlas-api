@@ -29,7 +29,7 @@ class StubEndpointsTest {
     private final ForecastController forecast = new ForecastController();
     private final GoalController goal = new GoalController();
     private final PlanController plan = new PlanController();
-    private final MasterController master = new MasterController();
+    // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
     private final SystemController system = new SystemController();
     private final AiController ai = new AiController();
 
@@ -76,9 +76,6 @@ class StubEndpointsTest {
                 () -> plan.getActivePlan("id"),
                 () -> plan.completeStep("id", 1, null),
                 () -> plan.skipStep("id", 1),
-                // Master
-                master::listCurrencies,
-                () -> master.getFxTerms("bank"),
                 // System
                 system::getHomeSummary,
                 system::getSafeMode,

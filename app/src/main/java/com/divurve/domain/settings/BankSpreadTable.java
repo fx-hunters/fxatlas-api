@@ -39,4 +39,9 @@ public final class BankSpreadTable {
         }
         return BASE_SPREAD_BY_BANK.getOrDefault(bankCode, DEFAULT_BASE_SPREAD_RATIO);
     }
+
+    /** 마스터에 대표 스프레드가 등록된 은행 코드인지 여부. {@code null} 은 미등록으로 본다. */
+    public static boolean isRegistered(String bankCode) {
+        return bankCode != null && BASE_SPREAD_BY_BANK.containsKey(bankCode);
+    }
 }
