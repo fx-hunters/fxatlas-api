@@ -92,14 +92,20 @@ app/                       나머지 전부. 레이어는 패키지로 나눈다
 ## 8. 테스트 커버리지 (JaCoCo, 100%)
 - 목표: 라인·브랜치 커버리지 **100%**. 특히 `engine`은 예외 없이 100% — 계산 신뢰성이 제품 주장 전체의 근거다.
 - 측정 제외(보일러플레이트): `**/dto/**`, `**/entity/**`, `**/config/**`, `**/port/**`, `**/architecture/**`, `**/*Application.class`. `engine`/`domain`/`infra` **서비스 로직은 예외 없이 포함**한다.
-- CI 는 `./gradlew test jacocoTestCoverageVerification` 을 실행하고 미달 시 빌드를 실패시킨다.
+- 검증되는 카운터는 **INSTRUCTION · LINE · BRANCH 세 가지**다. `counter` 를 지정하지 않으면 JaCoCo 기본값인
+  INSTRUCTION 만 검사되어 미커버 분기가 그대로 통과한다(이슈 #40에서 수정).
+- CI 는 `./gradlew build test jacocoTestCoverageVerification` 을 실행하고 미달 시 빌드를 실패시킨다.
+  **push 전 로컬에서 `./gradlew ciCheck` 로 같은 검증을 돌린다** — 선행으로 `export DOCKER_API_VERSION=1.44` 가 필요하다(README 참고).
+- 미달 원인은 HTML 리포트로 찾는다. CI 실패 시에도 워크플로 실행 페이지의 Artifacts 에 리포트가 올라간다.
 
 ## 9. Git 워크플로 (필수 — 위반 시 반려)
 1. 작업 요청을 받으면 **코드보다 먼저 단위 GitHub Issue 를 만든다** (`.github/ISSUE_TEMPLATE` 의 Feature/Bug 템플릿 사용).
 2. **현재 브랜치 성격과 요청 작업 유형이 다르면 새 브랜치 생성을 먼저 제안**한다. 브랜치명은 `feat/<scope>` · `fix/<scope>` · `chore/<scope>`. 이슈가 연관되어 있다면, `feat/{이슈번호}-<scope>`. 
 3. **커밋은 절대 임의로 하지 않는다.** 커밋 메시지(타입/스코프/한 줄 요약/본문)를 먼저 사용자에게 제시하고, **승인받은 뒤에만** 커밋한다.
 4. PR 은 템플릿을 그대로 쓰고, 본문에 **`Closes #이슈번호`** 를 포함한다.
-5. `main`/`develop` 으로의 push·PR 은 `.github/workflows/ci.yml` 이 빌드+테스트+커버리지+아키텍처 검증을 돌린다. 없으면 먼저 생성을 제안한다.
+5. **PR 을 올리기 전에 최신 `develop` 을 머지/리베이스한 상태에서 `./gradlew ciCheck` 를 통과시킨다.**
+   오래된 베이스에서 받은 green 체크는 근거가 되지 않는다 — 2026-09-06 대규모 CI 실패가 정확히 이 stale-green 머지로 발생했다.
+6. `main`/`develop` 으로의 push·PR 은 `.github/workflows/ci.yml` 이 빌드+테스트+커버리지+아키텍처 검증을 돌린다. 없으면 먼저 생성을 제안한다.
 
 ## 10. 확인 필요 / 미확정 (팀 결정 후 이 문서 갱신)
 현재 뼈대는 아래를 **문서 권장 기본값**으로 채워 두었다. 팀 확정 시 갱신한다.

@@ -131,10 +131,20 @@ class UserSettingsServiceTest {
     }
 
     @Test
-    void updateSettings_은_우대율이_범위를_벗어나면_400() {
+    void updateSettings_은_우대율이_상한을_넘으면_400() {
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service().updateSettings(userId, "004", 1.5, "detailed", "finance"))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(userSettingsRepository, never()).save(any());
+    }
+
+    /** 상한과 하한은 {@code ||} 로 묶인 별개 분기다 — 상한만 검증하면 하한 분기가 미커버로 남는다(이슈 #40). */
+    @Test
+    void updateSettings_은_우대율이_음수면_400() {
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", -0.1, "detailed", "finance"))
                 .isInstanceOf(InvalidRequestException.class);
         verify(userSettingsRepository, never()).save(any());
     }
