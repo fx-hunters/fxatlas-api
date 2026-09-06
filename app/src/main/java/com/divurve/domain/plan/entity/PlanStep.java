@@ -1,5 +1,6 @@
 package com.divurve.domain.plan.entity;
 
+import com.divurve.domain.plan.PlanStepStatus;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.FetchType;
@@ -100,5 +101,58 @@ public class PlanStep {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    /**
+     * 회차 완료 기록.
+     *
+     * @param executedAmount 실제 실행한 외화 금액
+     */
+    public void markAsCompleted(double executedAmount) {
+        this.executedAmount = executedAmount;
+        this.status = PlanStepStatus.COMPLETED;
+    }
+
+    /**
+     * 회차 건너뛰기 표시.
+     */
+    public void markAsSkipped() {
+        this.status = PlanStepStatus.SKIPPED;
+    }
+
+    /**
+     * 회차 금액 업데이트 (건너뛰기로 인한 부담 재분배).
+     *
+     * @param newAmount 새로운 회차 부담 금액
+     */
+    public void updateAmount(double newAmount) {
+        this.amount = newAmount;
+    }
+
+    /**
+     * 회차가 미완료 상태인지 확인.
+     *
+     * @return pending 상태면 true
+     */
+    public boolean isPending() {
+        return PlanStepStatus.PENDING.equals(status);
+    }
+
+    /**
+     * 회차가 완료 상태인지 확인.
+     *
+     * @return completed 상태면 true
+     */
+    public boolean isCompleted() {
+        return PlanStepStatus.COMPLETED.equals(status);
+    }
+
+    /**
+     * 회차가 건너뛴 상태인지 확인.
+     *
+     * @return skipped 상태면 true
+     */
+    public boolean isSkipped() {
+        return PlanStepStatus.SKIPPED.equals(status);
     }
 }

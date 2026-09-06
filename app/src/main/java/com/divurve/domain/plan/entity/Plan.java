@@ -167,4 +167,11 @@ public class Plan {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    /**
+     * 계획을 비활성화한다 (새 버전 생성 시 이전 버전 비활성화용).
+     */
+    public void deactivate() {
+        this.isActive = false;
+    }
 }
