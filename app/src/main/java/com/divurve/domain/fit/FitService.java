@@ -79,7 +79,14 @@ public class FitService {
         ConcentrationCalculator.ConcentrationResult result =
                 concentrationCalculator.diagnose(currencyToAssetKrw, 0.35);
 
-        return new ConcentrationDiagnosis(result, owner.getId());
+        return new ConcentrationDiagnosis(
+                result.exposure(),
+                result.topCurrency(),
+                result.topShare(),
+                result.threshold(),
+                result.status(),
+                owner.getId()
+        );
     }
 
     /**
@@ -148,8 +155,11 @@ public class FitService {
                 concentrationCalculator.diagnose(adjustedAssetKrw, 0.35);
 
         return new DiversificationSimulation(
-                result,
-                concentrationAfter,
+                result.portfolioVolBefore(),
+                result.portfolioVolAfter(),
+                result.adjustedShare(),
+                concentrationAfter.threshold(),
+                concentrationAfter.topShare(),
                 owner.getId(),
                 targetCurrency
         );
@@ -246,14 +256,21 @@ public class FitService {
 
     // DTO 클래스들
     public record ConcentrationDiagnosis(
-            ConcentrationCalculator.ConcentrationResult result,
+            double exposure,
+            String topCurrency,
+            double topShare,
+            double threshold,
+            String status,
             UUID userId
     ) {
     }
 
     public record DiversificationSimulation(
-            DiversificationSimulator.SimulationResult result,
-            ConcentrationCalculator.ConcentrationResult concentrationAfter,
+            double portfolioVolBefore,
+            double portfolioVolAfter,
+            Map<String, Double> adjustedShare,
+            double thresholdAfter,
+            double topShareAfter,
             UUID userId,
             String targetCurrency
     ) {

@@ -152,7 +152,10 @@ public class XrayService {
                 fxRatio,
                 currencyToAssetKrw,
                 exposure,
-                concentration
+                concentration.topCurrency(),
+                concentration.topShare(),
+                concentration.threshold(),
+                concentration.status()
         );
     }
 
@@ -178,7 +181,32 @@ public class XrayService {
                 mode
         );
 
-        return new AttributionAnalysis(result);
+        return new AttributionAnalysis(
+                result.costBasisKrw(),
+                result.currentKrw(),
+                result.totalReturn(),
+                new AttributionComponentData(
+                        result.asset().key(),
+                        result.asset().returnRatio(),
+                        result.asset().krwImpact()
+                ),
+                new AttributionComponentData(
+                        result.fx().key(),
+                        result.fx().returnRatio(),
+                        result.fx().krwImpact()
+                ),
+                new AttributionComponentData(
+                        result.interaction().key(),
+                        result.interaction().returnRatio(),
+                        result.interaction().krwImpact()
+                ),
+                new AttributionComponentData(
+                        result.cost().key(),
+                        result.cost().returnRatio(),
+                        result.cost().krwImpact()
+                ),
+                mode
+        );
     }
 
     private StressAnalysis buildStressAnalysis(
@@ -215,7 +243,24 @@ public class XrayService {
                 currencyToShock
         );
 
-        return new StressAnalysis(result);
+        // 통화별 영향도 맵 구성
+        Map<String, CurrencyStressImpactData> byCurrencyMap = new HashMap<>();
+        for (Map.Entry<String, StressCalculator.CurrencyStressImpact> entry : result.byCurrencyMap().entrySet()) {
+            StressCalculator.CurrencyStressImpact impact = entry.getValue();
+            byCurrencyMap.put(entry.getKey(), new CurrencyStressImpactData(
+                    impact.currencyCode(),
+                    impact.shock(),
+                    impact.impactKrw()
+            ));
+        }
+
+        return new StressAnalysis(
+                result.totalAssetBeforeKrw(),
+                result.totalAssetAfterKrw(),
+                result.portfolioImpactKrw(),
+                result.portfolioImpactRatio(),
+                byCurrencyMap
+        );
     }
 
     private Map<String, RateSnapshot> fetchLatestRates(List<Holding> holdings, List<Deposit> deposits) {
@@ -275,17 +320,45 @@ public class XrayService {
             double fxRatio,
             Map<String, Long> currencyToAssetKrw,
             Map<String, Double> exposure,
-            ConcentrationCalculator.ConcentrationResult concentration
+            String concentrationTopCurrency,
+            double concentrationTopShare,
+            double concentrationThreshold,
+            String concentrationStatus
     ) {
     }
 
     public record AttributionAnalysis(
-            AttributionCalculator.AttributionResult result
+            long costBasisKrw,
+            long currentKrw,
+            double totalReturn,
+            AttributionComponentData asset,
+            AttributionComponentData fx,
+            AttributionComponentData interaction,
+            AttributionComponentData cost,
+            String mode
+    ) {
+    }
+
+    public record AttributionComponentData(
+            String key,
+            double returnRatio,
+            long krwImpact
     ) {
     }
 
     public record StressAnalysis(
-            StressCalculator.StressResult result
+            long totalAssetBeforeKrw,
+            long totalAssetAfterKrw,
+            long portfolioImpactKrw,
+            double portfolioImpactRatio,
+            Map<String, CurrencyStressImpactData> byCurrencyMap
+    ) {
+    }
+
+    public record CurrencyStressImpactData(
+            String currencyCode,
+            double shock,
+            long impactKrw
     ) {
     }
 }

@@ -6,8 +6,6 @@ import com.divurve.api.dto.fit.SimulateResponse;
 import com.divurve.common.architecture.WebAdapter;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.fit.FitService;
-import com.divurve.engine.concentration.ConcentrationCalculator;
-import com.divurve.engine.diversification.DiversificationSimulator;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.ArrayList;
@@ -44,15 +42,14 @@ public class FitController {
     public ApiResponse<ConcentrationResponse> getConcentration(@RequestParam UUID userId) {
 
         FitService.ConcentrationDiagnosis diagnosis = fitService.diagnoseConcentration(userId);
-        ConcentrationCalculator.ConcentrationResult result = diagnosis.result();
 
         ConcentrationResponse response = new ConcentrationResponse(
-                result.exposure(),
-                result.topCurrency(),
-                result.topShare(),
-                result.threshold(),
-                result.status(),
-                buildSuggestions(result.status(), result.topCurrency())
+                diagnosis.exposure(),
+                diagnosis.topCurrency(),
+                diagnosis.topShare(),
+                diagnosis.threshold(),
+                diagnosis.status(),
+                buildSuggestions(diagnosis.status(), diagnosis.topCurrency())
         );
 
         return ApiResponse.of(response);
@@ -70,20 +67,17 @@ public class FitController {
                 request.deltaShare()
         );
 
-        DiversificationSimulator.SimulationResult simResult = simulation.result();
-        ConcentrationCalculator.ConcentrationResult concAfter = simulation.concentrationAfter();
-
         // Portfolio volatility 구성
         SimulateResponse.PortfolioVol portfolioVol = new SimulateResponse.PortfolioVol(
-                simResult.portfolioVolBefore(),
-                simResult.portfolioVolAfter()
+                simulation.portfolioVolBefore(),
+                simulation.portfolioVolAfter()
         );
 
         // 조정 후 노출도
-        Map<String, Double> exposureAfter = new LinkedHashMap<>(simResult.adjustedShare());
+        Map<String, Double> exposureAfter = new LinkedHashMap<>(simulation.adjustedShare());
 
         // 임계값 이내 여부
-        boolean withinThreshold = concAfter.topShare() <= concAfter.threshold();
+        boolean withinThreshold = simulation.topShareAfter() <= simulation.thresholdAfter();
 
         // Suggested goal (FR-FT-04)
         SimulateResponse.SuggestedGoal suggestedGoal = new SimulateResponse.SuggestedGoal(
@@ -96,7 +90,7 @@ public class FitController {
         SimulateResponse response = new SimulateResponse(
                 portfolioVol,
                 exposureAfter,
-                concAfter.threshold(),
+                simulation.thresholdAfter(),
                 withinThreshold,
                 suggestedGoal
         );

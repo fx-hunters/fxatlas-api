@@ -7,9 +7,6 @@ import com.divurve.api.dto.xray.XrayResponse;
 import com.divurve.common.architecture.WebAdapter;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.xray.XrayService;
-import com.divurve.engine.attribution.AttributionCalculator;
-import com.divurve.engine.concentration.ConcentrationCalculator;
-import com.divurve.engine.stress.StressCalculator;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.ArrayList;
@@ -55,12 +52,11 @@ public class XrayController {
         }
 
         // Concentration 정보
-        ConcentrationCalculator.ConcentrationResult conc = snapshot.concentration();
         XrayResponse.Concentration concentration = new XrayResponse.Concentration(
-                conc.topCurrency(),
-                conc.topShare(),
-                conc.threshold(),
-                conc.status()
+                snapshot.concentrationTopCurrency(),
+                snapshot.concentrationTopShare(),
+                snapshot.concentrationThreshold(),
+                snapshot.concentrationStatus()
         );
 
         // Sensitivity (1% 변동)
@@ -102,31 +98,30 @@ public class XrayController {
             @RequestParam(required = false) String mode) {
 
         XrayService.AttributionAnalysis analysis = xrayService.getAttribution(userId, currencyCode, mode);
-        AttributionCalculator.AttributionResult result = analysis.result();
 
         // 구성요소 리스트 구성
         List<AttributionResponse.Component> components = new ArrayList<>();
         components.add(new AttributionResponse.Component(
                 "asset",
-                result.asset().krwImpact(),
-                result.asset().returnRatio() * 100
+                analysis.asset().krwImpact(),
+                analysis.asset().returnRatio() * 100
         ));
         components.add(new AttributionResponse.Component(
                 "fx",
-                result.fx().krwImpact(),
-                result.fx().returnRatio() * 100
+                analysis.fx().krwImpact(),
+                analysis.fx().returnRatio() * 100
         ));
         components.add(new AttributionResponse.Component(
                 "cost",
-                result.cost().krwImpact(),
-                result.cost().returnRatio() * 100
+                analysis.cost().krwImpact(),
+                analysis.cost().returnRatio() * 100
         ));
 
-        if ("three_way".equals(result.mode())) {
+        if ("three_way".equals(analysis.mode())) {
             components.add(new AttributionResponse.Component(
                     "interaction",
-                    result.interaction().krwImpact(),
-                    result.interaction().returnRatio() * 100
+                    analysis.interaction().krwImpact(),
+                    analysis.interaction().returnRatio() * 100
             ));
         }
 
@@ -135,10 +130,10 @@ public class XrayController {
 
         AttributionResponse response = new AttributionResponse(
                 currencyCode != null ? currencyCode : "ALL",
-                result.mode(),
-                result.costBasisKrw(),
-                result.currentKrw(),
-                result.totalReturn(),
+                analysis.mode(),
+                analysis.costBasisKrw(),
+                analysis.currentKrw(),
+                analysis.totalReturn(),
                 components,
                 byHolding
         );
@@ -153,11 +148,10 @@ public class XrayController {
             @RequestBody StressRequest request) {
 
         XrayService.StressAnalysis analysis = xrayService.applyStress(userId, request.shocks());
-        StressCalculator.StressResult result = analysis.result();
 
         // 통화별 영향도 리스트 구성
         List<StressResponse.ByCurrency> byCurrencyList = new ArrayList<>();
-        for (StressCalculator.CurrencyStressImpact impact : result.byCurrencyMap().values()) {
+        for (XrayService.CurrencyStressImpactData impact : analysis.byCurrencyMap().values()) {
             byCurrencyList.add(new StressResponse.ByCurrency(
                     impact.currencyCode(),
                     impact.shock(),
@@ -166,10 +160,10 @@ public class XrayController {
         }
 
         StressResponse response = new StressResponse(
-                result.totalAssetBeforeKrw(),
-                result.totalAssetAfterKrw(),
-                result.portfolioImpactKrw(),
-                result.portfolioImpactRatio(),
+                analysis.totalAssetBeforeKrw(),
+                analysis.totalAssetAfterKrw(),
+                analysis.portfolioImpactKrw(),
+                analysis.portfolioImpactRatio(),
                 byCurrencyList
         );
 
