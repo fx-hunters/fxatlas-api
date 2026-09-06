@@ -21,6 +21,7 @@ import com.divurve.domain.holding.entity.KrwAsset;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -87,7 +88,7 @@ public class AssetController {
     @PostMapping("/holdings")
     public ApiResponse<HoldingResponse> createHolding(
             @CurrentUser UUID userId,
-            @RequestBody HoldingCreateRequest request) {
+            @Valid @RequestBody HoldingCreateRequest request) {
         Holding created = holdingService.create(
                 userId,
                 request.ticker(),
@@ -164,7 +165,7 @@ public class AssetController {
     @PostMapping("/deposits")
     public ApiResponse<DepositResponse> createDeposit(
             @CurrentUser UUID userId,
-            @RequestBody DepositCreateRequest request) {
+            @Valid @RequestBody DepositCreateRequest request) {
         Deposit created = depositService.create(
                 userId,
                 request.currencyCode(),

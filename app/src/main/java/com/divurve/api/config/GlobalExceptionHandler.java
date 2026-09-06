@@ -2,6 +2,7 @@ package com.divurve.api.config;
 
 import com.divurve.common.exception.ApiException;
 import com.divurve.common.response.ErrorResponse;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -38,6 +39,10 @@ public class GlobalExceptionHandler {
     private static final String NOT_FOUND = "NOT_FOUND";
     private static final String DUPLICATE_RESOURCE = "DUPLICATE_RESOURCE";
 
+    /** 응답 직렬화와 같은 전략으로 필드명을 변환한다 — {@link #toResponseField} 참고. */
+    private static final PropertyNamingStrategies.SnakeCaseStrategy SNAKE_CASE =
+            new PropertyNamingStrategies.SnakeCaseStrategy();
+
     /** 도메인/웹 계층이 의도적으로 던진 API 예외 → 지정 상태코드 + 에러 엔벨로프. */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(ApiException ex) {
@@ -72,8 +77,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleValidationFailure(MethodArgumentNotValidException ex) {
         return ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
-                .map(error -> badRequest(error.getDefaultMessage(), error.getField()))
+                .map(error -> badRequest(error.getDefaultMessage(), toResponseField(error.getField())))
                 .orElseGet(() -> badRequest("요청 값이 올바르지 않습니다.", null));
+    }
+
+    /**
+     * Bean Validation 이 알려주는 필드명(Java 프로퍼티명)을 응답 키(snake_case)로 바꾼다.
+     *
+     * <p>{@code FieldError#getField()} 는 {@code currencyCode} 처럼 <b>Java 이름을 그대로</b> 준다.
+     * 요청·응답 본문은 Jackson 전역 SNAKE_CASE 전략으로 {@code currency_code} 를 쓰므로, 변환하지 않으면
+     * 프론트가 받은 적 없는 키를 {@code field} 로 돌려주게 된다(CLAUDE.md §5 위반). 직렬화와 같은
+     * 전략 객체로 변환해 두 경로가 갈라지지 않게 한다.
+     *
+     * <p>한계 — 숫자가 붙은 필드({@code interval80} 등)는 CLAUDE.md §5 에 따라 {@code @JsonProperty} 로
+     * 키를 직접 고정하는데, 이 변환은 그 어노테이션을 보지 않는다. 현재 Bean Validation 이 걸린 필드에는
+     * 숫자가 없어 문제가 없다. 숫자 필드에 제약을 달게 되면 그때 어노테이션까지 읽도록 넓혀야 한다.
+     */
+    private static String toResponseField(String javaPropertyName) {
+        return SNAKE_CASE.translate(javaPropertyName);
     }
 
     /**
@@ -108,7 +129,25 @@ public class GlobalExceptionHandler {
         return badRequest("요청 헤더의 Content-Type 값을 지원하지 않습니다.", null);
     }
 
-    /** DB 제약 위반(유니크 등) → 409. SQL 원문·제약명은 노출하지 않는다. */
+    /**
+     * DB 제약 위반(유니크·NOT NULL·FK 등) → 409. SQL 원문·제약명은 노출하지 않는다.
+     *
+     * <p><b>NOT NULL 위반과 유니크 위반을 구분하지 않기로 결정했다 (이슈 #75).</b> 근거:
+     * <ul>
+     *   <li>이 핸들러에 NOT NULL 위반이 실제로 도달하는 경로는 요청 DTO 에 Bean Validation
+     *       (`@NotBlank`/`@NotNull`)이 빠진 곳뿐이다. 이슈 #75 에서 그 경로를 전수 점검해
+     *       `@Valid` 를 채웠으므로, 이 예외가 여전히 잡힌다면 그 자체가 "검증 누락 회귀"
+     *       신호다 — 방어선은 입력 경계(컨트롤러)에 두고, 이 핸들러는 안전망으로만 남긴다.</li>
+     *   <li>제약 종류(NOT NULL vs UNIQUE vs FK)를 구분하려면 Hibernate 가 감싼
+     *       {@code ConstraintViolationException} 의 {@code getConstraintName()} 이나 SQLState 를
+     *       읽어야 하는데, 둘 다 DB 벤더(PostgreSQL) 의 오류 포맷에 종속된다. 이 레포는 DB 를
+     *       PostgreSQL 로 고정했지만(CLAUDE.md §2), 그 결합을 예외 매핑 계층에까지 들이는 것은
+     *       팀이 아직 합의하지 않은 비용이라 지금은 들이지 않는다.</li>
+     *   <li>남는 위험: {@code POST /goals} 는 이슈 #75 범위 밖(별도 이슈)이라 검증을 추가하지
+     *       않았다 — 거기서 이름이 비면 지금도 이 핸들러를 타고 409 로 잘못 나간다. 그 이슈가
+     *       처리되기 전까지는 이 지점이 유일하게 남은 회색지대다.</li>
+     * </ul>
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         log.warn("데이터 무결성 제약 위반", ex);

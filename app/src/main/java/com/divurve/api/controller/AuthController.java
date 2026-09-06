@@ -66,7 +66,7 @@ public class AuthController {
                     responseCode = "401", description = "UNAUTHORIZED — 이메일 미존재 또는 비밀번호 불일치")
     })
     @PostMapping("/login")
-    public ApiResponse<TokenResponse> login(@RequestBody LoginRequest request) {
+    public ApiResponse<TokenResponse> login(@Valid @RequestBody LoginRequest request) {
         AuthResult result = authService.login(request.email(), request.password());
         return ApiResponse.of(toTokenResponse(result.tokens(), false, result.onboarded()));
     }
@@ -81,7 +81,7 @@ public class AuthController {
                     responseCode = "401", description = "UNAUTHORIZED — 만료·위조된 리프레시 토큰")
     })
     @PostMapping("/refresh")
-    public ApiResponse<TokenResponse> refresh(@RequestBody RefreshRequest request) {
+    public ApiResponse<TokenResponse> refresh(@Valid @RequestBody RefreshRequest request) {
         AuthResult result = authService.refreshAccessToken(request.refreshToken());
         return ApiResponse.of(toTokenResponse(result.tokens(), false, result.onboarded()));
     }
