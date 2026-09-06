@@ -4,10 +4,15 @@ import com.divurve.common.architecture.UseCase;
 import com.divurve.domain.port.AiProvider;
 import com.divurve.domain.settings.SettingsView;
 import com.divurve.domain.settings.UserSettingsService;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
@@ -27,8 +32,19 @@ import org.springframework.transaction.annotation.Transactional;
  *       {@link UserSettingsService} 에서 읽는다(FR-CM-08) — 표현에만 쓰고 계산에는 넣지 않는다.</li>
  * </ul>
  *
- * <p><b>감사 기록(ERD §10 {@code audit_logs}, action='ai_explained')은 이번 범위 밖이다</b>(이슈 #56).
- * 프롬프트·응답 전문을 남기는 지점은 아래 {@link #explain} 안에 표시해 뒀다.
+ * <p><b>실 LLM 대응</b>(이슈 #73). Mock 만 있을 때는 나타나지 않던 세 가지를 여기서 처리한다.
+ * <ul>
+ *   <li><b>예외 격리</b> — 타임아웃·429·5xx·응답 형식 위반이 그대로 올라가면 500 이 나가 FR-AI-06 을
+ *       어긴다. 어댑터가 던지는 모든 런타임 예외를 잡아 <b>즉시 폴백</b>한다.</li>
+ *   <li><b>재시도 정책 분리</b> — 수치 대조 실패는 재생성할 값이 있지만, 금지 표현은 §5 4단계가
+ *       "차단"이라고 규정한 것이지 "재생성"이 아니다. 금지 표현과 API 예외는 재시도 없이 폴백한다.
+ *       이 구분이 없으면 실 API 에서 요금과 지연만 2배가 된다.</li>
+ *   <li><b>총예산</b> — {@value #TOTAL_BUDGET_SECONDS}초. 남은 예산이 없으면 재시도를 생략한다.
+ *       요청당 타임아웃(5초)만으로는 재시도까지 합쳐 10초가 될 수 있어 NFR-AI-03 을 지키지 못한다.</li>
+ * </ul>
+ *
+ * <p><b>감사 기록(ERD §10 {@code audit_logs}, action='ai_explained')은 여전히 범위 밖이다</b>(이슈 #56).
+ * 마스킹 범위가 정해질 때까지 어댑터가 <b>페이로드 없이 호출 메타만</b> 로그로 남긴다.
  */
 @UseCase
 public class AiService {
@@ -44,6 +60,17 @@ public class AiService {
     static final int MAX_ATTEMPTS = 2;
 
     /**
+     * 서술 1건에 쓸 수 있는 총시간 (이슈 #73 확정). 요청당 타임아웃은 인프라 설정
+     * ({@code app.external.anthropic.request-timeout}, 기본 5초)이고, 이 상수는 <b>재시도까지 포함한</b>
+     * 상한이다. 남은 예산이 없으면 두 번째 호출을 하지 않고 바로 폴백한다.
+     */
+    static final int TOTAL_BUDGET_SECONDS = 8;
+
+    static final Duration TOTAL_BUDGET = Duration.ofSeconds(TOTAL_BUDGET_SECONDS);
+
+    private static final Logger log = LoggerFactory.getLogger(AiService.class);
+
+    /**
      * 검증 실패 시의 고정 템플릿(§5 5단계). 화면과 계산 카드는 그대로 유지되고, 이 문장만
      * 대체된다 — 폴백 문장 자체는 수치를 담지 않으므로 항상 수치 대조를 통과한다.
      */
@@ -57,16 +84,22 @@ public class AiService {
     private final AiResponseValidator numericValidator;
     private final NarrativeFilter narrativeFilter;
     private final UserSettingsService userSettingsService;
+    private final RegimeDisclosureCheck regimeDisclosureCheck;
+    private final Clock clock;
 
     public AiService(
             AiProvider aiProvider,
             AiResponseValidator numericValidator,
             NarrativeFilter narrativeFilter,
-            UserSettingsService userSettingsService) {
+            UserSettingsService userSettingsService,
+            RegimeDisclosureCheck regimeDisclosureCheck,
+            Clock clock) {
         this.aiProvider = Objects.requireNonNull(aiProvider, "aiProvider");
         this.numericValidator = Objects.requireNonNull(numericValidator, "numericValidator");
         this.narrativeFilter = Objects.requireNonNull(narrativeFilter, "narrativeFilter");
         this.userSettingsService = Objects.requireNonNull(userSettingsService, "userSettingsService");
+        this.regimeDisclosureCheck = Objects.requireNonNull(regimeDisclosureCheck, "regimeDisclosureCheck");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /**
@@ -87,24 +120,49 @@ public class AiService {
         String explainLevel = settings.explainLevel();
         String explainDomain = settings.explainDomain();
 
+        Instant deadline = clock.instant().plus(TOTAL_BUDGET);
+
         for (int attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
-            AiProvider.ExplainResult result = aiProvider.explain(
-                    new AiProvider.ExplainContext(surface, facts, explainLevel, explainDomain));
-            List<String> sentences = result.sentences();
+            if (attempt > 0 && !clock.instant().isBefore(deadline)) {
+                log.warn("AI 서술 예산({}초) 소진 — 재시도 없이 폴백한다. surface={}",
+                        TOTAL_BUDGET_SECONDS, surface);
+                break;
+            }
+
+            List<String> sentences;
+            try {
+                sentences = aiProvider.explain(
+                        new AiProvider.ExplainContext(surface, facts, explainLevel, explainDomain))
+                        .sentences();
+            } catch (RuntimeException e) {
+                // 타임아웃·429·5xx·응답 형식 위반. 재시도해도 같은 이유로 실패할 가능성이 크고,
+                // 남은 예산을 쓰는 동안 사용자는 계속 기다린다 — 즉시 폴백한다(FR-AI-06).
+                log.warn("AI 서술 호출 실패 — 폴백한다. surface={} attempt={} cause={}",
+                        surface, attempt, e.toString());
+                break;
+            }
 
             // TODO(#56): 여기서 프롬프트(surface·facts·explainLevel·explainDomain)와 원본 응답을
             //  audit_logs(action='ai_explained') 에 남긴다(ERD v3.0 §10). user_id 는 위 파라미터로 이미 있다.
+            //  마스킹 범위가 확정될 때까지는 어댑터가 페이로드 없이 호출 메타만 로그로 남긴다(이슈 #73).
+
+            List<String> blockedPhrases = narrativeFilter.detect(String.join(" ", sentences));
+            if (!blockedPhrases.isEmpty()) {
+                // §5 4단계는 "차단"이지 "재생성"이 아니다 — 다시 물어도 같은 어조가 나올 뿐이다.
+                log.warn("AI 서술에서 금지 표현 발견 — 재시도 없이 폴백한다. surface={} count={}",
+                        surface, blockedPhrases.size());
+                break;
+            }
 
             boolean numericMatch = numericValidator.verify(sentences, facts);
-            List<String> blockedPhrases = narrativeFilter.detect(String.join(" ", sentences));
-
-            if (numericMatch && blockedPhrases.isEmpty()) {
+            boolean regimeDisclosed = regimeDisclosureCheck.verify(sentences, facts);
+            if (numericMatch && regimeDisclosed) {
                 return new ExplainOutcome(sentences, explainLevel, explainDomain, false, true, List.of());
             }
-            // 수치 날조 또는 금지 표현 발견 — 재시도. 문서 §5 3·4단계.
+            // 수치 날조(§5 3단계) 또는 급변 구간 안내 누락(§5.1) — 재생성할 여지가 있으므로 재시도한다.
         }
 
-        // 최대 재시도 초과 — 폐기하고 고정 템플릿으로 폴백한다. 200 을 유지한다(FR-AI-06, NFR-AI-03).
+        // 폐기하고 고정 템플릿으로 폴백한다. 200 을 유지한다(FR-AI-06, NFR-AI-03).
         return new ExplainOutcome(FALLBACK_SENTENCES, explainLevel, explainDomain, true, true, List.of());
     }
 

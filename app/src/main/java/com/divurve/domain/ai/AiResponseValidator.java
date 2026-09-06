@@ -31,6 +31,9 @@ public class AiResponseValidator {
 
     private static final Pattern NUMBER_TOKEN = Pattern.compile("[0-9][0-9,]*(?:\\.[0-9]+)?%?");
 
+    /** {@code interval_80} 의 80 처럼 키 이름에 박힌 숫자. */
+    private static final Pattern KEY_NUMBER = Pattern.compile("[0-9]+");
+
     /**
      * 서술 문장들에 등장하는 모든 숫자가 {@code facts} 안의 값과 (허용 오차 내에서) 일치하는지 확인한다.
      *
@@ -82,10 +85,34 @@ public class AiResponseValidator {
         if (node instanceof Number number) {
             out.add(number.doubleValue());
         } else if (node instanceof Map<?, ?> map) {
-            map.values().forEach(value -> collect(value, out));
+            map.forEach((key, value) -> {
+                collectFromKey(String.valueOf(key), out);
+                collect(value, out);
+            });
         } else if (node instanceof List<?> list) {
             list.forEach(value -> collect(value, out));
         }
         // 문자열·불리언 값은 수치 그라운딩 대상이 아니다.
+    }
+
+    /**
+     * 키 이름에 박힌 숫자도 허용값으로 받아들인다 (이슈 #73).
+     *
+     * <p><b>왜 필요한가</b> — {@code interval_80} 의 80(신뢰수준)은 값이 아니라 키에만 있다.
+     * 그런데 이 구간을 설명하는 문장은 반드시 "80% 구간"이라고 써야 뜻이 통한다. 키를 보지 않으면
+     * 그 80 이 날조로 잡혀 <b>모든 forecast_summary 서술이 폴백으로 떨어진다</b> — Mock 템플릿까지
+     * 포함해서다(기존 템플릿도 "80% 구간은 …" 이라고 쓴다). 실 LLM 을 붙이고 나서야 드러났다.
+     *
+     * <p>키의 숫자도 결국 엔진이 만들어 프롬프트에 넣어 준 입력이므로, "서술의 숫자가 facts
+     * 어딘가에 있는가"라는 이 검증기의 기준을 그대로 만족한다 — 완화가 아니라 누락을 메우는 것이다.
+     * {@code %} 정규화 덕분에 키의 80 은 문장의 "80%"(0.8)와도 대응된다.
+     */
+    private static void collectFromKey(String key, List<Double> out) {
+        Matcher matcher = KEY_NUMBER.matcher(key);
+        while (matcher.find()) {
+            double value = Double.parseDouble(matcher.group());
+            out.add(value);
+            out.add(value / 100.0);
+        }
     }
 }

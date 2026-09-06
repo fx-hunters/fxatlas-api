@@ -18,9 +18,11 @@ import java.util.Objects;
  * v1 Mock 은 "위험도는 중간 수준입니다", "다양한 자산군에 분산되어 있으며" 처럼 입력에 없는 값을
  * 임의로 채웠다. 이 구현은 {@code facts} 에 실제로 있는 값만 문장에 담는다 — 없는 키는 언급하지 않는다.
  *
- * <p><b>교체 시 주의</b>(리뷰 B M7): 실 LLM 어댑터를 추가할 때 이 클래스에도 {@code @Profile}/
- * {@code @ConditionalOnProperty} 를 달거나 둘 중 하나를 빼야 한다 — 둘 다 {@code @ExternalAdapter} 로
- * 남으면 {@code AiProvider} 빈이 2개가 되어 기동이 실패한다(이슈 #38 과 같은 유형).
+ * <p><b>실 LLM 어댑터와 공존한다</b>(이슈 #73). {@link ClaudeAiProvider} 는
+ * {@code app.external.anthropic.enabled=true} 일 때만 만들어지고 {@code @Primary} 를 갖는다 —
+ * 빈이 2개여도 주입은 그쪽으로 간다(이슈 #38 유형의 기동 실패는 일어나지 않는다). 이 클래스는
+ * 그때도 살아남아 <b>{@code forecast_summary} 이외 화면</b>(홈·X-Ray·Fit·스트레스)을 계속 담당한다.
+ * 그 화면들은 문장 수·어조 규약이 문서에 확정되지 않아 실 API 로 옮기지 않았다.
  */
 @ExternalAdapter
 public class MockAiProvider implements AiProvider {

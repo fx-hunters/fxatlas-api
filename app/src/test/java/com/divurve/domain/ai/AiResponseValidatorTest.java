@@ -143,4 +143,25 @@ class AiResponseValidatorTest {
 
         assertThat(result).isTrue();
     }
+
+    /**
+     * 키 이름에 박힌 숫자도 그라운딩으로 인정한다 (이슈 #73).
+     * {@code interval_80} 의 80(신뢰수준)은 값이 아니라 키에만 있는데, 이 구간을 설명하는 문장은
+     * "80% 구간"이라고 써야 뜻이 통한다. 인정하지 않으면 forecast_summary 서술이 전부 폴백된다.
+     */
+    @Test
+    void 키에_박힌_신뢰수준을_퍼센트로_쓴_문장을_통과시킨다() {
+        Map<String, Object> facts = Map.of("interval_80", Map.of("lo", 1352.4, "hi", 1408.9));
+        List<String> sentences =
+                List.of("앞으로의 환율은 1,352.4원에서 1,408.9원 사이에 있을 가능성이 80% 정도입니다.");
+
+        assertThat(validator.verify(sentences, facts)).isTrue();
+    }
+
+    @Test
+    void 키에도_값에도_없는_숫자는_여전히_잡는다() {
+        Map<String, Object> facts = Map.of("interval_80", Map.of("lo", 1352.4, "hi", 1408.9));
+
+        assertThat(validator.verify(List.of("가능성은 95% 입니다."), facts)).isFalse();
+    }
 }
