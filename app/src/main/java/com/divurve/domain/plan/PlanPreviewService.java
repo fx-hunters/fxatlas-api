@@ -170,7 +170,7 @@ public class PlanPreviewService {
                         new PlanPreviewInfo.Split.NextStepDelta(nextSigmaGain, nextFeeIncrease)),
                 steps,
                 new PlanPreviewInfo.Opportunity(opportunityAmountKrw, 1.05, // triggerRate
-                        goal.getTargetDate().toString(), "기회 상황에서만 실행"),
+                        formatTargetDate(goal.getTargetDate()), "기회 상황에서만 실행"),
                 new PlanPreviewInfo.Metrics(
                         "achieveProb", // hero
                         0.05, // entrySigma (임시)
@@ -207,6 +207,14 @@ public class PlanPreviewService {
             case "QUARTERLY" -> 90;
             default -> 365 / splitCount;
         };
+    }
+
+    /**
+     * 기회 버킷의 최종 안전 환전일 표기. target_date 는 nullable 이므로
+     * ({@link #calculateMonths} 도 null 을 12개월로 가정한다) 여기서도 null 을 그대로 흘려보낸다.
+     */
+    private String formatTargetDate(LocalDate targetDate) {
+        return targetDate == null ? null : targetDate.toString();
     }
 
     private int calculateMonths(LocalDate targetDate) {
