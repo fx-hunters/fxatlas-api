@@ -17,4 +17,7 @@ public interface PlanRepository extends JpaRepository<Plan, UUID> {
 
     /** 목표의 활성 계획을 조회한다 (활성 버전은 하나만 유지된다). */
     Optional<Plan> findByGoal_IdAndIsActiveTrue(UUID goalId);
+
+    /** 목표의 최신 계획 버전(가장 높은 버전 번호)을 조회한다. */
+    Optional<Plan> findTopByGoal_IdOrderByVersionDesc(UUID goalId);
 }

@@ -28,7 +28,7 @@ class StubEndpointsTest {
     private final FitController fit = new FitController();
     private final ForecastController forecast = new ForecastController();
     private final GoalController goal = new GoalController();
-    private final PlanController plan = new PlanController();
+    // PlanController 는 의존성이 많아 이 테스트에서 제외 — 추가로 구현되면서 역할이 변경됨
     // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
     private final SystemController system = new SystemController();
     private final AiController ai = new AiController();
@@ -62,13 +62,7 @@ class StubEndpointsTest {
                 () -> goal.getGoal("id"),
                 () -> goal.updateGoal("id", null),
                 () -> goal.deleteGoal("id"),
-                // Plan
-                () -> plan.preview(null),
-                () -> plan.createPlan("id", null),
-                () -> plan.listPlanVersions("id"),
-                () -> plan.getActivePlan("id"),
-                () -> plan.completeStep("id", 1, null),
-                () -> plan.skipStep("id", 1),
+                // Plan 는 의존성 주입으로 인해 테스트에서 제외
                 // System
                 system::getHomeSummary,
                 system::getSafeMode,
