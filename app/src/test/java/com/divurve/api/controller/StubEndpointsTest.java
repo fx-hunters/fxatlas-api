@@ -27,7 +27,7 @@ class StubEndpointsTest {
     private final XrayController xray = new XrayController();
     private final FitController fit = new FitController();
     private final ForecastController forecast = new ForecastController();
-    private final GoalController goal = new GoalController();
+    // goals 는 실구현되어 이 스텁 목록에서 제외 — GoalControllerTest 가 매핑을 검증한다.
     private final PlanController plan = new PlanController();
     // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
     private final SystemController system = new SystemController();
@@ -56,12 +56,6 @@ class StubEndpointsTest {
                 () -> forecast.getFactors(null),
                 () -> forecast.getModelPerformance(null, null),
                 forecast::getEvents,
-                // Goal
-                goal::listGoals,
-                () -> goal.createGoal(null),
-                () -> goal.getGoal("id"),
-                () -> goal.updateGoal("id", null),
-                () -> goal.deleteGoal("id"),
                 // Plan
                 () -> plan.preview(null),
                 () -> plan.createPlan("id", null),
