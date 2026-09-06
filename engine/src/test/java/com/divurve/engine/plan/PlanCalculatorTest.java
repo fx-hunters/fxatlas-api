@@ -90,10 +90,10 @@ class PlanCalculatorTest {
     class CalculateRemainingStepsTest {
 
         @Test
-        @DisplayName("정상 케이스: 10회 중 처리한 3회차, 건너뛰기 1회")
+        @DisplayName("정상 케이스: 처리한 3회차, 건너뛰기 1회")
         void normalCase() {
             int result = PlanCalculator.calculateRemainingSteps(10, 3, 1);
-            assertEquals(7, result); // 10 - (3-1) - 1 = 7 (남은 4~10 중 이미 1회 건너뜸, 실행가능=7)
+            assertEquals(6, result); // 10 - 3 - 1 = 6 (남은 회차 - 건너뛴 회차)
         }
 
         @Test

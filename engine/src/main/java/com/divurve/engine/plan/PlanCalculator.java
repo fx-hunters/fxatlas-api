@@ -42,19 +42,19 @@ public class PlanCalculator {
      * 건너뛴 회차를 제외한 남은 회차수 계산.
      *
      * @param totalSteps   전체 회차수
-     * @param currentSeq   현재 회차번호 (1부터 시작)
+     * @param currentSeq   처리한 회차수 (누적)
      * @param skippedCount 건너뛴 회차 누적수
      * @return 남은 실행 가능 회차수
      */
     public static int calculateRemainingSteps(int totalSteps, int currentSeq, int skippedCount) {
-        int executed = currentSeq - 1; // 0부터 시작하는 인덱스
-        int remaining = totalSteps - executed - skippedCount;
+        int remaining = totalSteps - currentSeq - skippedCount;
         return Math.max(0, remaining);
     }
 
     /**
      * 건너뛰기로 인한 회차당 부담 증가분 계산.
      * 남은 금액을 남은 회차로 나누어 새로운 부담(amount)을 계산한다.
+     * 남은 금액이 음수이면 새로운 부담을 0으로 처리 (이미 충분히 매입).
      *
      * @param remainingAmount 남은 외화 금액
      * @param remainingSteps  남은 회차수
@@ -67,11 +67,7 @@ public class PlanCalculator {
             return 0.0;
         }
 
-        double newAmount = remainingAmount / remainingSteps;
-        if (currentAmount < EPSILON) {
-            return 0.0;
-        }
-
+        double newAmount = Math.max(0.0, remainingAmount) / remainingSteps;
         return (newAmount - currentAmount) / currentAmount;
     }
 
