@@ -30,6 +30,18 @@ class CurrencyMasterTest {
     }
 
     @Test
+    void USD_는_삼각환산에서_self_측이다() {
+        CurrencyMaster.Currency usd = CurrencyMaster.all().stream()
+                .filter(c -> c.currencyCode().equals("USD"))
+                .findFirst()
+                .orElseThrow();
+
+        assertThat(usd.minorUnits()).isEqualTo(2);
+        assertThat(usd.quoteUnit()).isEqualTo(1);
+        assertThat(usd.usdSide()).isEqualTo("self");
+    }
+
+    @Test
     void EUR_는_USD페어에서_quote_측이다() {
         CurrencyMaster.Currency eur = CurrencyMaster.all().stream()
                 .filter(c -> c.currencyCode().equals("EUR"))

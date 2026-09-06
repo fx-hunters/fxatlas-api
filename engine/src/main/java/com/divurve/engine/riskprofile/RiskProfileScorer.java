@@ -4,41 +4,43 @@ import com.divurve.engine.EngineComponent;
 import java.util.List;
 
 /**
- * 투자성향 등급 산출기 (이슈 #10, FR-ON-02). 5문항 이내의 문항 응답값(각 1~3)으로부터
- * 원점수와 등급(안정·균형·유연)을 결정론적으로 계산한다.
+ * 투자성향 등급 산출기 (이슈 #10, FR-ON-02, ERD v3.0). 간편 진단 Q1~Q3 응답값(각 0~3, A=0·B=1·C=2·D=3)의
+ * <b>합계</b>로 원점수(0~9)와 대표 등급 4종을 결정론적으로 계산한다.
  *
- * <p>등급은 <b>응답 개수에 무관하게</b> 평균 선택값으로 판정한다 — "5문항 이내"라 문항 수가 가변이므로
- * 합계 임계값 대신 1문항당 평균을 쓴다(1에 가까울수록 보수적, 3에 가까울수록 공격적).
  * <ul>
- *   <li>평균 ≤ {@value #STABLE_MAX_AVG} → {@code stable}(안정)</li>
- *   <li>평균 ≤ {@value #BALANCED_MAX_AVG} → {@code balanced}(균형)</li>
- *   <li>그 외 → {@code flexible}(유연)</li>
+ *   <li>합계 0~2 → {@code stable}(안정항로형)</li>
+ *   <li>합계 3~4 → {@code balanced}(균형항로형)</li>
+ *   <li>합계 5~6 → {@code aggressive}(적극항로형)</li>
+ *   <li>합계 7~9 → {@code challenging}(도전항로형)</li>
  * </ul>
- * 경계는 [1,3] 구간 삼등분(1⅔·2⅓)이다.
  *
  * <p>이 클래스는 순수 계산만 한다 — Spring/JPA 의존이 없고 부작용이 없다.
  */
 @EngineComponent
 public class RiskProfileScorer {
 
-    /** 문항당 최소 선택값. */
-    public static final int MIN_CHOICE = 1;
-    /** 문항당 최대 선택값. */
+    /** 문항당 최소 선택값 (A=0). */
+    public static final int MIN_CHOICE = 0;
+    /** 문항당 최대 선택값 (D=3). */
     public static final int MAX_CHOICE = 3;
-    /** 최대 문항 수 (FR-ON-02: 5문항 이내). */
-    public static final int MAX_QUESTIONS = 5;
+    /** 최대 문항 수 (간편 진단 Q1~Q3). */
+    public static final int MAX_QUESTIONS = 3;
 
-    /** 안정 등급 상한(평균) — 1⅔. */
-    public static final double STABLE_MAX_AVG = 5.0 / 3.0;
-    /** 균형 등급 상한(평균) — 2⅓. */
-    public static final double BALANCED_MAX_AVG = 7.0 / 3.0;
+    /** 안정 등급 상한(합계). */
+    public static final int STABLE_MAX_SCORE = 2;
+    /** 균형 등급 상한(합계). */
+    public static final int BALANCED_MAX_SCORE = 4;
+    /** 적극 등급 상한(합계). */
+    public static final int AGGRESSIVE_MAX_SCORE = 6;
 
-    /** 안정 등급 코드. */
+    /** 안정항로형 등급 코드. */
     public static final String STABLE = "stable";
-    /** 균형 등급 코드. */
+    /** 균형항로형 등급 코드. */
     public static final String BALANCED = "balanced";
-    /** 유연 등급 코드. */
-    public static final String FLEXIBLE = "flexible";
+    /** 적극항로형 등급 코드. */
+    public static final String AGGRESSIVE = "aggressive";
+    /** 도전항로형 등급 코드. */
+    public static final String CHALLENGING = "challenging";
 
     /**
      * 문항 응답값 목록으로 원점수와 등급을 산출한다.
@@ -61,17 +63,19 @@ public class RiskProfileScorer {
             }
             score += choice;
         }
-        double average = (double) score / choices.size();
-        return new RiskAssessment(score, classify(average));
+        return new RiskAssessment(score, classify(score));
     }
 
-    private String classify(double average) {
-        if (average <= STABLE_MAX_AVG) {
+    private String classify(int score) {
+        if (score <= STABLE_MAX_SCORE) {
             return STABLE;
         }
-        if (average <= BALANCED_MAX_AVG) {
+        if (score <= BALANCED_MAX_SCORE) {
             return BALANCED;
         }
-        return FLEXIBLE;
+        if (score <= AGGRESSIVE_MAX_SCORE) {
+            return AGGRESSIVE;
+        }
+        return CHALLENGING;
     }
 }

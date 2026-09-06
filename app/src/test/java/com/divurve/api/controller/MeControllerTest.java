@@ -76,14 +76,14 @@ class MeControllerTest {
     void updateRiskProfile_은_응답을_커맨드로_변환해_재진단한다() {
         authenticate();
         when(riskProfileService.reassess(eq(userId), any())).thenReturn(
-                new RiskProfileView("flexible", 9, List.of()));
+                new RiskProfileView("challenging", 9, List.of()));
 
         RiskProfileUpdateRequest request = new RiskProfileUpdateRequest(List.of(
                 new RiskProfileUpdateRequest.Answer("Q1", 3),
                 new RiskProfileUpdateRequest.Answer("Q2", 3)));
         ApiResponse<RiskProfileResponse> response = controller().updateRiskProfile(request);
 
-        assertThat(response.data().riskType()).isEqualTo("flexible");
+        assertThat(response.data().riskType()).isEqualTo("challenging");
 
         @SuppressWarnings("unchecked")
         ArgumentCaptor<List<AnswerCommand>> captor = ArgumentCaptor.forClass(List.class);
@@ -109,14 +109,15 @@ class MeControllerTest {
     void getSettings_은_설정과_실효스프레드를_래핑한다() {
         authenticate();
         when(userSettingsService.getSettings(userId)).thenReturn(
-                new SettingsView("004", 0.8, "simple", 0.0175, 0.0035));
+                new SettingsView("004", 0.8, "simple", "plain", 0.0175, 0.0035));
 
         ApiResponse<SettingsResponse> response = controller().getSettings();
 
         SettingsResponse body = response.data();
         assertThat(body.defaultBankCode()).isEqualTo("004");
         assertThat(body.fxDiscountRatio()).isEqualTo(0.8);
-        assertThat(body.displayMode()).isEqualTo("simple");
+        assertThat(body.explainLevel()).isEqualTo("simple");
+        assertThat(body.explainDomain()).isEqualTo("plain");
         assertThat(body.baseSpreadRatio()).isEqualTo(0.0175);
         assertThat(body.effectiveSpreadRatio()).isEqualTo(0.0035);
     }
@@ -124,11 +125,11 @@ class MeControllerTest {
     @Test
     void updateSettings_은_요청값을_그대로_전달하고_결과를_래핑한다() {
         authenticate();
-        when(userSettingsService.updateSettings(userId, "081", 0.5, "standard")).thenReturn(
-                new SettingsView("081", 0.5, "standard", 0.0165, 0.00825));
+        when(userSettingsService.updateSettings(userId, "081", 0.5, "standard", "finance")).thenReturn(
+                new SettingsView("081", 0.5, "standard", "finance", 0.0165, 0.00825));
 
         ApiResponse<SettingsResponse> response = controller()
-                .updateSettings(new SettingsUpdateRequest("081", 0.5, "standard"));
+                .updateSettings(new SettingsUpdateRequest("081", 0.5, "standard", "finance"));
 
         assertThat(response.data().effectiveSpreadRatio()).isEqualTo(0.00825);
     }

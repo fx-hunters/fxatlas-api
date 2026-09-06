@@ -31,7 +31,7 @@ class MasterControllerTest {
     @Test
     void listCurrencies_는_통화_표시규칙을_data_meta로_래핑한다() {
         when(masterDataService.listCurrencies()).thenReturn(List.of(
-                new CurrencyMaster.Currency("USD", 2, 1, "base", "currency-usd")));
+                new CurrencyMaster.Currency("USD", 2, 1, "self", "currency-usd")));
 
         ApiResponse<CurrencyListResponse> response = controller().listCurrencies();
 
@@ -40,7 +40,7 @@ class MasterControllerTest {
             assertThat(c.currencyCode()).isEqualTo("USD");
             assertThat(c.minorUnits()).isEqualTo(2);
             assertThat(c.quoteUnit()).isEqualTo(1);
-            assertThat(c.usdSide()).isEqualTo("base");
+            assertThat(c.usdSide()).isEqualTo("self");
             assertThat(c.colorToken()).isEqualTo("currency-usd");
         });
     }

@@ -21,7 +21,7 @@ import org.hibernate.generator.EventType;
  * 외화 금액은 소수 4자리(명세 1.4)이므로 {@code numeric(19,4)} 로 저장한다.
  */
 @Entity
-@Table(name = "deposits")
+@Table(name = "fx_deposits")
 public class Deposit {
 
     @Id

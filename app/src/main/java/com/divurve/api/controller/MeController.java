@@ -85,7 +85,8 @@ public class MeController {
     @PutMapping("/settings")
     public ApiResponse<SettingsResponse> updateSettings(@RequestBody SettingsUpdateRequest request) {
         SettingsView view = userSettingsService.updateSettings(
-                currentUserId(), request.defaultBankCode(), request.fxDiscountRatio(), request.displayMode());
+                currentUserId(), request.defaultBankCode(), request.fxDiscountRatio(),
+                request.explainLevel(), request.explainDomain());
         return ApiResponse.of(toSettingsResponse(view));
     }
 
@@ -114,7 +115,8 @@ public class MeController {
         return new SettingsResponse(
                 view.defaultBankCode(),
                 view.fxDiscountRatio(),
-                view.displayMode(),
+                view.explainLevel(),
+                view.explainDomain(),
                 view.baseSpreadRatio(),
                 view.effectiveSpreadRatio());
     }
