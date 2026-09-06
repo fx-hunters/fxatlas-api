@@ -2,6 +2,7 @@ package com.divurve.api.config;
 
 import com.divurve.common.exception.ApiException;
 import com.divurve.common.response.ErrorResponse;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.dao.DataIntegrityViolationException;
@@ -38,6 +39,10 @@ public class GlobalExceptionHandler {
     private static final String NOT_FOUND = "NOT_FOUND";
     private static final String DUPLICATE_RESOURCE = "DUPLICATE_RESOURCE";
 
+    /** 응답 직렬화와 같은 전략으로 필드명을 변환한다 — {@link #toResponseField} 참고. */
+    private static final PropertyNamingStrategies.SnakeCaseStrategy SNAKE_CASE =
+            new PropertyNamingStrategies.SnakeCaseStrategy();
+
     /** 도메인/웹 계층이 의도적으로 던진 API 예외 → 지정 상태코드 + 에러 엔벨로프. */
     @ExceptionHandler(ApiException.class)
     public ResponseEntity<ErrorResponse> handleApiException(ApiException ex) {
@@ -72,8 +77,24 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleValidationFailure(MethodArgumentNotValidException ex) {
         return ex.getBindingResult().getFieldErrors().stream()
                 .findFirst()
-                .map(error -> badRequest(error.getDefaultMessage(), error.getField()))
+                .map(error -> badRequest(error.getDefaultMessage(), toResponseField(error.getField())))
                 .orElseGet(() -> badRequest("요청 값이 올바르지 않습니다.", null));
+    }
+
+    /**
+     * Bean Validation 이 알려주는 필드명(Java 프로퍼티명)을 응답 키(snake_case)로 바꾼다.
+     *
+     * <p>{@code FieldError#getField()} 는 {@code currencyCode} 처럼 <b>Java 이름을 그대로</b> 준다.
+     * 요청·응답 본문은 Jackson 전역 SNAKE_CASE 전략으로 {@code currency_code} 를 쓰므로, 변환하지 않으면
+     * 프론트가 받은 적 없는 키를 {@code field} 로 돌려주게 된다(CLAUDE.md §5 위반). 직렬화와 같은
+     * 전략 객체로 변환해 두 경로가 갈라지지 않게 한다.
+     *
+     * <p>한계 — 숫자가 붙은 필드({@code interval80} 등)는 CLAUDE.md §5 에 따라 {@code @JsonProperty} 로
+     * 키를 직접 고정하는데, 이 변환은 그 어노테이션을 보지 않는다. 현재 Bean Validation 이 걸린 필드에는
+     * 숫자가 없어 문제가 없다. 숫자 필드에 제약을 달게 되면 그때 어노테이션까지 읽도록 넓혀야 한다.
+     */
+    private static String toResponseField(String javaPropertyName) {
+        return SNAKE_CASE.translate(javaPropertyName);
     }
 
     /**

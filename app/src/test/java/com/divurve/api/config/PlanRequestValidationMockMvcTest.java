@@ -90,7 +90,7 @@ class PlanRequestValidationMockMvcTest {
                         .content("{\"weekly_budget_krw\":10000}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.error.field").value("goalId"));
+                .andExpect(jsonPath("$.error.field").value("goal_id"));
 
         verifyNoInteractions(routeFeatureFlag, planAccessService, planPreviewService);
     }

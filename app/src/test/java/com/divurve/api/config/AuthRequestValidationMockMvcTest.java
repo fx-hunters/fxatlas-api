@@ -72,7 +72,7 @@ class AuthRequestValidationMockMvcTest {
                         .content("{}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.error.field").value("refreshToken"));
+                .andExpect(jsonPath("$.error.field").value("refresh_token"));
 
         org.mockito.Mockito.verifyNoInteractions(authService);
     }

@@ -69,7 +69,7 @@ class AssetRequestValidationMockMvcTest {
                         .content("{\"ticker\":\"AAPL\",\"quantity\":10,\"avg_price\":150.0}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.error.field").value("currencyCode"));
+                .andExpect(jsonPath("$.error.field").value("currency_code"));
 
         verifyNoInteractions(holdingService);
     }
@@ -93,7 +93,7 @@ class AssetRequestValidationMockMvcTest {
                         .content("{\"amount\":1000.0}"))
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"))
-                .andExpect(jsonPath("$.error.field").value("currencyCode"));
+                .andExpect(jsonPath("$.error.field").value("currency_code"));
 
         verifyNoInteractions(depositService);
     }
