@@ -14,10 +14,10 @@ import com.divurve.api.dto.plan.StepCompleteRequest;
 import com.divurve.api.dto.plan.StepCompleteResponse;
 import com.divurve.api.dto.plan.StepSkipResponse;
 import com.divurve.common.architecture.WebAdapter;
-import com.divurve.common.exception.NotImplementedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.goal.GoalRepository;
 import com.divurve.domain.plan.PlanConfirmService;
+import com.divurve.domain.plan.PlanPreviewService;
 import com.divurve.domain.plan.PlanRepository;
 import com.divurve.domain.plan.PlanStepExecutionService;
 import com.divurve.domain.plan.PlanStepRepository;
@@ -28,10 +28,6 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
-import com.divurve.domain.plan.PlanPreviewService;
-import io.swagger.v3.oas.annotations.Operation;
-import io.swagger.v3.oas.annotations.tags.Tag;
-import java.util.Objects;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -41,9 +37,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 계획 엔드포인트 (명세 2·3.1·3.7장).
- * 계획 확정, 이력 조회, 활성 계획 조회, 회차 완료/건너뛰기를 담당한다.
+ * 계획 미리보기, 확정, 이력 조회, 활성 계획 조회, 회차 완료/건너뛰기를 담당한다.
  * 경로가 /plans 와 /goals/{id}/plans 를 넘나들어 base 는 /api/v1 로 둔다.
- * preview 엔드포인트는 구현됨, 나머지는 미구현.
  */
 @WebAdapter
 @RestController
@@ -56,18 +51,24 @@ public class PlanController {
     private final PlanStepRepository planStepRepository;
     private final PlanConfirmService planConfirmService;
     private final PlanStepExecutionService planStepExecutionService;
+    private final PlanPreviewService planPreviewService;
+    private final PlanPreviewResponseMapper planPreviewResponseMapper;
 
     public PlanController(
             GoalRepository goalRepository,
             PlanRepository planRepository,
             PlanStepRepository planStepRepository,
             PlanConfirmService planConfirmService,
-            PlanStepExecutionService planStepExecutionService) {
+            PlanStepExecutionService planStepExecutionService,
+            PlanPreviewService planPreviewService,
+            PlanPreviewResponseMapper planPreviewResponseMapper) {
         this.goalRepository = requireNonNull(goalRepository, "goalRepository");
         this.planRepository = requireNonNull(planRepository, "planRepository");
         this.planStepRepository = requireNonNull(planStepRepository, "planStepRepository");
         this.planConfirmService = requireNonNull(planConfirmService, "planConfirmService");
         this.planStepExecutionService = requireNonNull(planStepExecutionService, "planStepExecutionService");
+        this.planPreviewService = requireNonNull(planPreviewService, "planPreviewService");
+        this.planPreviewResponseMapper = requireNonNull(planPreviewResponseMapper, "planPreviewResponseMapper");
     }
 
     @Operation(summary = "계획 미리보기 (저장하지 않는다)")

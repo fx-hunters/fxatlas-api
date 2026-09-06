@@ -9,16 +9,19 @@ import static org.mockito.Mockito.when;
 import com.divurve.api.dto.plan.ActivePlanResponse;
 import com.divurve.api.dto.plan.PlanCreateRequest;
 import com.divurve.api.dto.plan.PlanPreviewRequest;
+import com.divurve.api.dto.plan.PlanPreviewResponse;
+import com.divurve.api.dto.plan.PlanPreviewResponseMapper;
 import com.divurve.api.dto.plan.PlanResponse;
 import com.divurve.api.dto.plan.PlanVersionListResponse;
 import com.divurve.api.dto.plan.StepCompleteRequest;
 import com.divurve.api.dto.plan.StepCompleteResponse;
 import com.divurve.api.dto.plan.StepSkipResponse;
-import com.divurve.common.exception.NotImplementedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.goal.GoalRepository;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.PlanConfirmService;
+import com.divurve.domain.plan.PlanPreviewService.PlanPreviewInfo;
+import com.divurve.domain.plan.PlanPreviewService;
 import com.divurve.domain.plan.PlanRepository;
 import com.divurve.domain.plan.PlanStepExecutionService;
 import com.divurve.domain.plan.PlanStepExecutionService.SkipResult;
@@ -46,6 +49,8 @@ class PlanControllerTest {
     private PlanStepRepository planStepRepository;
     private PlanConfirmService planConfirmService;
     private PlanStepExecutionService planStepExecutionService;
+    private PlanPreviewService planPreviewService;
+    private PlanPreviewResponseMapper planPreviewResponseMapper;
     private PlanController controller;
 
     private UUID goalId;
@@ -60,9 +65,12 @@ class PlanControllerTest {
         planStepRepository = mock(PlanStepRepository.class);
         planConfirmService = mock(PlanConfirmService.class);
         planStepExecutionService = mock(PlanStepExecutionService.class);
+        planPreviewService = mock(PlanPreviewService.class);
+        planPreviewResponseMapper = mock(PlanPreviewResponseMapper.class);
         controller = new PlanController(
                 goalRepository, planRepository, planStepRepository,
-                planConfirmService, planStepExecutionService);
+                planConfirmService, planStepExecutionService,
+                planPreviewService, planPreviewResponseMapper);
 
         goalId = UUID.randomUUID();
         planId = UUID.randomUUID();
@@ -93,12 +101,22 @@ class PlanControllerTest {
     }
 
     @Test
-    @DisplayName("preview 는 아직 구현되지 않았다")
-    void previewIsNotImplemented() {
+    @DisplayName("preview 는 요청 네 필드를 그대로 서비스에 넘기고 매퍼 결과를 data/meta 로 감싼다")
+    void previewDelegatesToServiceAndMapper() {
+        // 이슈 #19 시점에는 preview 가 스텁이라 501 을 단언했으나, 이슈 #18 에서 실구현되었다.
+        // 병합 과정에서 옛 단언이 남아 있었다(이슈 #38).
         PlanPreviewRequest request = new PlanPreviewRequest(goalId.toString(), 100000L, 0.8, 4);
+        PlanPreviewInfo info = mock(PlanPreviewInfo.class);
+        PlanPreviewResponse mapped = mock(PlanPreviewResponse.class);
+        when(planPreviewService.generatePreview(goalId.toString(), 100000L, 0.8, 4)).thenReturn(info);
+        when(planPreviewResponseMapper.toResponse(info)).thenReturn(mapped);
 
-        assertThatThrownBy(() -> controller.preview(request))
-                .isInstanceOf(NotImplementedException.class);
+        ApiResponse<PlanPreviewResponse> response = controller.preview(request);
+
+        verify(planPreviewService).generatePreview(goalId.toString(), 100000L, 0.8, 4);
+        verify(planPreviewResponseMapper).toResponse(info);
+        assertThat(response.data()).isSameAs(mapped);
+        assertThat(response.meta()).isNotNull();
     }
 
     @Test

@@ -57,7 +57,7 @@ class PlanConfirmServiceTest {
         @BeforeEach
         void setUp() {
             goalId = UUID.randomUUID();
-            owner = User.create("test@example.com", "Test User", false);
+            owner = User.create("test@example.com", "Test User", null, null);
             goal = Goal.builder(owner, "USD Goal", "savings", "travel", "USD")
                     .targetAmount(10000.0)
                     .build();
@@ -158,7 +158,7 @@ class PlanConfirmServiceTest {
         @BeforeEach
         void setUp() {
             planId = UUID.randomUUID();
-            User owner = User.create("test@example.com", "Test User", false);
+            User owner = User.create("test@example.com", "Test User", null, null);
             Goal goal = Goal.builder(owner, "USD Goal", "savings", "travel", "USD")
                     .targetAmount(10000.0)
                     .build();

@@ -1,10 +1,15 @@
 package com.divurve.domain.config;
 
 import com.divurve.engine.attribution.AttributionCalculator;
+import com.divurve.engine.bucket.BucketAllocator;
 import com.divurve.engine.concentration.ConcentrationCalculator;
+import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.cost.EffectiveSpreadCalculator;
 import com.divurve.engine.diversification.DiversificationSimulator;
 import com.divurve.engine.riskprofile.RiskProfileScorer;
+import com.divurve.engine.safemode.SafeModeEvaluator;
+import com.divurve.engine.simulate.MonteCarloSimulator;
+import com.divurve.engine.split.SplitVarianceReducer;
 import com.divurve.engine.stress.StressCalculator;
 import com.divurve.engine.weight.WeightCalculator;
 import org.springframework.context.annotation.Bean;
@@ -55,5 +60,35 @@ public class EngineConfig {
     @Bean
     public DiversificationSimulator diversificationSimulator() {
         return new DiversificationSimulator();
+    }
+
+    // 이슈 #18 계획 미리보기 계산기 — PlanPreviewService 가 주입받는다.
+    // 이슈 #38 이전에는 등록이 누락되어 컨텍스트 기동이 NoSuchBeanDefinitionException 으로 실패했다.
+
+    @Bean
+    public BucketAllocator bucketAllocator() {
+        return new BucketAllocator();
+    }
+
+    @Bean
+    public SplitVarianceReducer splitVarianceReducer() {
+        return new SplitVarianceReducer();
+    }
+
+    @Bean
+    public CostCalculator costCalculator() {
+        return new CostCalculator();
+    }
+
+    @Bean
+    public MonteCarloSimulator monteCarloSimulator() {
+        return new MonteCarloSimulator();
+    }
+
+    // 이슈 #20 안전모드 평가기 — SafeModeService 가 주입받는다. 위와 같은 이유로 누락되어 있었다.
+
+    @Bean
+    public SafeModeEvaluator safeModeEvaluator() {
+        return new SafeModeEvaluator();
     }
 }

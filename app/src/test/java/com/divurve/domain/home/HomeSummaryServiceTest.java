@@ -34,7 +34,7 @@ class HomeSummaryServiceTest {
 
     @Test
     void testGetSummary_ReturnsHomeSummaryView() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(holdingService.list(userId)).thenReturn(List.of());
         when(depositService.list(userId)).thenReturn(List.of());
@@ -58,7 +58,7 @@ class HomeSummaryServiceTest {
 
     @Test
     void testGetSummary_ContainsAllRequiredFields() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(holdingService.list(userId)).thenReturn(List.of());
         when(depositService.list(userId)).thenReturn(List.of());

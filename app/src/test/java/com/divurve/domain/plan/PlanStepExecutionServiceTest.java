@@ -46,7 +46,7 @@ class PlanStepExecutionServiceTest {
         service = new PlanStepExecutionService(planRepository, planStepRepository);
 
         planId = UUID.randomUUID();
-        owner = User.create("test@example.com", "Test User", false);
+        owner = User.create("test@example.com", "Test User", null, null);
         goal = Goal.builder(owner, "USD Goal", "savings", "travel", "USD")
                 .targetAmount(10000.0)
                 .build();

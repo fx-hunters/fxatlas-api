@@ -27,7 +27,7 @@ class UserProfileServiceTest {
 
     @Test
     void testGetProfile_ReturnsProfileWithCorrectInfo() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         user = Mockito.spy(user);
         Mockito.doReturn(userId).when(user).getId();
         when(repository.findById(userId)).thenReturn(Optional.of(user));
@@ -51,7 +51,7 @@ class UserProfileServiceTest {
 
     @Test
     void testUpdateProfile_UpdatesNameSuccessfully() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         user = Mockito.spy(user);
         Mockito.doReturn(userId).when(user).getId();
         when(repository.findById(userId)).thenReturn(Optional.of(user));

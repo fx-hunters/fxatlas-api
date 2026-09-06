@@ -39,7 +39,7 @@ class GoalControllerTest {
     void setUp() {
         goalController = new GoalController(goalService);
         currentUserId = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
-        owner = User.create("test@example.com", "Test User", true);
+        owner = User.createDemo("test@example.com", "Test User");
     }
 
     @Test

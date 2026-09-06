@@ -42,7 +42,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testGetNotifications_ReturnsPersistedValues() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings settings = UserSettings.create(user, null, 0.0, "simple", "plain");
         settings.updateNotifications(true, false, true, false);
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(settings));
@@ -57,7 +57,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testUpdateNotifications_CreatesNewSettingsWhenNotExists() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings created = UserSettings.create(user, null, 0.0, "simple", "plain");
         created.updateNotifications(false, false, true, true);
 
@@ -75,7 +75,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testUpdateNotifications_UpdatesExistingSettings() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings settings = UserSettings.create(user, null, 0.0, "simple", "plain");
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(settings));
         when(userSettingsRepository.save(settings)).thenReturn(settings);
@@ -88,7 +88,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testUpdateNotifications_PreservesUnchangedValues() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings settings = UserSettings.create(user, null, 0.0, "simple", "plain");
         settings.updateNotifications(true, false, true, false);
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(settings));
@@ -105,7 +105,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testUpdateNotifications_ExistingSettingsPreserveReviewAndBucketWhenNull() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings settings = UserSettings.create(user, null, 0.0, "simple", "plain");
         settings.updateNotifications(false, false, false, true);
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(settings));
@@ -131,7 +131,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testUpdateNotifications_NewUserWithPartialNulls() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings created = UserSettings.create(user, null, 0.0, "simple", "plain");
         created.updateNotifications(true, false, true, true);
 
@@ -150,7 +150,7 @@ class NotificationSettingsServiceTest {
 
     @Test
     void testUpdateNotifications_NewUserAllNull() {
-        User user = User.create("test@example.com", "테스트사용자", false);
+        User user = User.create("test@example.com", "테스트사용자", null, null);
         UserSettings created = UserSettings.create(user, null, 0.0, "simple", "plain");
         created.updateNotifications(true, true, true, true);
 

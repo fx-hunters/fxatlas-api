@@ -1,0 +1,18 @@
+# 테스트 전용 프로파일 (이슈 #38).
+# dev 프로파일은 로컬 Postgres 접속 정보와 개발용 비밀번호를 가리키므로 테스트에서 쓰지 않는다.
+# datasource 접속 정보는 PostgresTestContainer 가 @DynamicPropertySource 로 주입한다.
+app:
+  # CorsConfig 생성자가 @Value("${app.frontend-url}") 로 필수 요구한다.
+  # 공통 application.yml 에는 없고 dev/prod 프로파일에만 있어, 이 키가 빠지면 컨텍스트 기동이 실패한다.
+  frontend-url: http://localhost:5173
+  auth:
+    jwt-secret: test-only-jwt-secret-not-for-any-real-environment-0123456789
+  external:
+    ecos:
+      api-key: test-ecos-key
+    fred:
+      api-key: test-fred-key
+
+spring:
+  jpa:
+    show-sql: false

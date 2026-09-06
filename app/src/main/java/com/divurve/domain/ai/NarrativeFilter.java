@@ -1,5 +1,6 @@
 package com.divurve.domain.ai;
 
+import com.divurve.common.architecture.UseCase;
 import java.util.regex.Pattern;
 
 /**
@@ -7,6 +8,7 @@ import java.util.regex.Pattern;
  * 단정적 방향 표현("확실히 오를것", "반드시 내릴것")과
  * 투자 권유 표현("매수 추천", "투자하세요")을 마스킹한다.
  */
+@UseCase
 public class NarrativeFilter {
 
     // 단정적 방향 표현 (확실함, 필연성 함축)
