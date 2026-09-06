@@ -33,6 +33,10 @@ dependencies {
     // 비밀번호 해싱 (이슈 #22) — BCryptPasswordEncoder 사용. Spring Security crypto 만 임포트.
     implementation("org.springframework.security:spring-security-crypto:6.3.3")
 
+    // Anthropic Claude 공식 Java SDK (이슈 #73) — AI 서술(narrate) 경로.
+    // 계산에는 절대 관여하지 않는다(CLAUDE.md §1) — 검증된 facts 를 문장으로 옮기는 데만 쓴다.
+    implementation("com.anthropic:anthropic-java:2.61.0")
+
     // 테스트
     testImplementation("org.springframework.boot:spring-boot-starter-test")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")

@@ -19,6 +19,12 @@ app:
       api-key: ""
     fred:
       api-key: ""
+    # AI 설명을 실 Claude API 로 받으려면 enabled: true + api-key 를 채운다 (이슈 #73).
+    # 비워 두면 MockAiProvider 의 템플릿 문장이 그대로 나간다 — 화면은 정상 동작한다.
+    # 발급: https://console.anthropic.com/settings/keys
+    anthropic:
+      enabled: false
+      api-key: ""
 
 spring:
   datasource:

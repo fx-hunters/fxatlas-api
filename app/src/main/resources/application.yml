@@ -34,6 +34,18 @@ app:
     fred:
       base-url: https://api.stlouisfed.org/fred
       api-key: ${FRED_API_KEY:}
+    # AI 서술(narrate) 경로 — Anthropic Claude (이슈 #73).
+    # enabled=false(기본)면 ClaudeAiProvider 빈이 만들어지지 않고 MockAiProvider 의 템플릿 문장이 나간다.
+    # true 로 켤 때 api-key 가 비어 있으면 기동 시점에 실패한다 — 켰다고 믿는 채로 템플릿이 나가는 것보다 낫다.
+    # request-timeout(5s)·AiService 총예산(8s)·SDK 재시도 0 은 이슈 #73 확정값이다.
+    # 계산에는 관여하지 않는다(CLAUDE.md §1) — 검증된 facts 를 문장으로 옮기는 데만 쓴다.
+    anthropic:
+      enabled: ${ANTHROPIC_ENABLED:false}
+      api-key: ${ANTHROPIC_API_KEY:}
+      model: claude-opus-5
+      max-tokens: 1024
+      request-timeout: 5s
+      total-budget: 8s
 
 # Route 기능 플래그 (API 명세 v2 §6.2, 요구사항 v2 §4.12).
 # Route 는 전부 P(구조만 준비)다 — 목적함수·버킷 비율·목적별 하한선·권장 분할 회차·
