@@ -74,6 +74,15 @@ class AiControllerTest {
     }
 
     @Test
+    void parseGoal_request가_null이면_InvalidRequestException을_던진다() {
+        AiController controller = new AiController(aiService);
+
+        assertThatThrownBy(() -> controller.parseGoal(null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("요청 본문");
+    }
+
+    @Test
     void explain_는_엔진_결과를_서술로_변환한다() {
         when(aiService.explain("concise", Map.of("total", 100000.0)))
                 .thenReturn("귀사의 자산은 100000입니다.");
@@ -115,6 +124,35 @@ class AiControllerTest {
     void explain_metrics가_empty이면_InvalidRequestException을_던진다() {
         AiController controller = new AiController(aiService);
         ExplainRequest request = new ExplainRequest("concise", Map.of());
+
+        assertThatThrownBy(() -> controller.explain(request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("metrics");
+    }
+
+    @Test
+    void explain_request가_null이면_InvalidRequestException을_던진다() {
+        AiController controller = new AiController(aiService);
+
+        assertThatThrownBy(() -> controller.explain(null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("요청 본문");
+    }
+
+    @Test
+    void explain_profile이_blank이면_InvalidRequestException을_던진다() {
+        AiController controller = new AiController(aiService);
+        ExplainRequest request = new ExplainRequest("   ", Map.of("total", 100000.0));
+
+        assertThatThrownBy(() -> controller.explain(request))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasMessageContaining("profile");
+    }
+
+    @Test
+    void explain_metrics가_null이면_InvalidRequestException을_던진다() {
+        AiController controller = new AiController(aiService);
+        ExplainRequest request = new ExplainRequest("concise", null);
 
         assertThatThrownBy(() -> controller.explain(request))
                 .isInstanceOf(InvalidRequestException.class)
