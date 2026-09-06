@@ -31,7 +31,7 @@ class StubEndpointsTest {
     private final PlanController plan = new PlanController();
     // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
     private final SystemController system = new SystemController();
-    private final AiController ai = new AiController();
+    // AI 는 실구현되어 이 스텁 목록에서 제외 — AiControllerTest 가 매핑을 검증한다.
 
     @TestFactory
     List<DynamicTest> 모든_스텁_엔드포인트는_501_NotImplemented_를_던진다() {
@@ -72,10 +72,7 @@ class StubEndpointsTest {
                 // System
                 system::getHomeSummary,
                 system::getSafeMode,
-                system::listNotifications,
-                // AI
-                () -> ai.parseGoal(null),
-                () -> ai.explain(null));
+                system::listNotifications);
 
         return calls.stream()
                 .map(call -> DynamicTest.dynamicTest(
