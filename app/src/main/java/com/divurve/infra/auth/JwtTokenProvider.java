@@ -17,10 +17,11 @@ import javax.crypto.SecretKey;
 import org.springframework.beans.factory.annotation.Value;
 
 /**
- * JWT 기반 {@link TokenProvider} 구현 (이슈 #9). HS256 서명, Spring Security 미사용.
+ * JWT 기반 {@link TokenProvider} 구현 (이슈 #9, #22). HS256 서명, Spring Security 미사용.
  *
  * <p>액세스·리프레시 토큰 모두 subject 에 유저 id, {@code is_demo}·{@code token_type} 클레임을 담는다.
- * {@link #verify} 는 액세스 토큰만 통과시키고(리프레시 토큰으로는 요청을 인증하지 못한다),
+ * {@link #verify} 는 액세스 토큰만 통과시키고(리프레시 토큰으로는 요청을 인증하지 못한다).
+ * {@link #verifyRefreshToken} 은 리프레시 토큰만 통과시킨다.
  * 서명 불일치·만료·형식 오류 시 예외를 던지지 않고 빈 값을 반환한다.
  */
 @ExternalAdapter
@@ -72,6 +73,26 @@ public class JwtTokenProvider implements TokenProvider {
                     .parseSignedClaims(accessToken)
                     .getPayload();
             if (!TYPE_ACCESS.equals(claims.get(CLAIM_TOKEN_TYPE, String.class))) {
+                return Optional.empty();
+            }
+            UUID userId = UUID.fromString(claims.getSubject());
+            boolean isDemo = Boolean.TRUE.equals(claims.get(CLAIM_IS_DEMO, Boolean.class));
+            return Optional.of(new AuthPrincipal(userId, isDemo));
+        } catch (JwtException | IllegalArgumentException e) {
+            // 서명 불일치·만료·형식 오류·subject 파싱 실패 등은 모두 "검증 실패"로 통일한다.
+            return Optional.empty();
+        }
+    }
+
+    @Override
+    public Optional<AuthPrincipal> verifyRefreshToken(String refreshToken) {
+        try {
+            Claims claims = Jwts.parser()
+                    .verifyWith(key)
+                    .build()
+                    .parseSignedClaims(refreshToken)
+                    .getPayload();
+            if (!TYPE_REFRESH.equals(claims.get(CLAIM_TOKEN_TYPE, String.class))) {
                 return Optional.empty();
             }
             UUID userId = UUID.fromString(claims.getSubject());

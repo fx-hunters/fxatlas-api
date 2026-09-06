@@ -36,7 +36,7 @@ class DepositServiceTest {
     private PurchaseFxRateResolver purchaseFxRateResolver;
 
     private final UUID userId = UUID.randomUUID();
-    private final User user = User.create("me-d@divurve.com", "나", false);
+    private final User user = User.createDemo("me-d@divurve.com", "나");
 
     private DepositService service() {
         return new DepositService(depositRepository, userRepository, purchaseFxRateResolver);

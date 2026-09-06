@@ -1,7 +1,12 @@
 package com.divurve.domain.config;
 
+import com.divurve.engine.attribution.AttributionCalculator;
+import com.divurve.engine.concentration.ConcentrationCalculator;
 import com.divurve.engine.cost.EffectiveSpreadCalculator;
+import com.divurve.engine.diversification.DiversificationSimulator;
 import com.divurve.engine.riskprofile.RiskProfileScorer;
+import com.divurve.engine.stress.StressCalculator;
+import com.divurve.engine.weight.WeightCalculator;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 
@@ -23,5 +28,32 @@ public class EngineConfig {
     @Bean
     public EffectiveSpreadCalculator effectiveSpreadCalculator() {
         return new EffectiveSpreadCalculator();
+    }
+
+    // 이슈 #14 X-Ray/Fit 계산기 — XrayService/FitService 가 주입받는다. 등록이 없으면 컨텍스트 기동이 실패한다.
+
+    @Bean
+    public WeightCalculator weightCalculator() {
+        return new WeightCalculator();
+    }
+
+    @Bean
+    public AttributionCalculator attributionCalculator() {
+        return new AttributionCalculator();
+    }
+
+    @Bean
+    public StressCalculator stressCalculator() {
+        return new StressCalculator();
+    }
+
+    @Bean
+    public ConcentrationCalculator concentrationCalculator() {
+        return new ConcentrationCalculator();
+    }
+
+    @Bean
+    public DiversificationSimulator diversificationSimulator() {
+        return new DiversificationSimulator();
     }
 }
