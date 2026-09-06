@@ -4,8 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.divurve.domain.RepositoryTestBase;
 import com.divurve.domain.holding.entity.Holding;
+import com.divurve.domain.holding.entity.PurchaseFxRate;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
+import java.math.BigDecimal;
+import java.time.LocalDate;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
@@ -40,5 +43,21 @@ class HoldingRepositoryTest extends RepositoryTestBase {
 
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getOwner().getId()).isEqualTo(owner.getId());
+    }
+
+    @Test
+    void 매입_환율_컨텍스트를_보존한다() {
+        User owner = userRepository.save(User.create("dave@divurve.com", "데이브", false));
+        Holding holding = Holding.create(owner, "NVDA", "USD", 1.0, 100.0);
+        LocalDate purchasedAt = LocalDate.of(2025, 3, 10);
+        holding.assignPurchaseContext(
+                purchasedAt, new PurchaseFxRate(new BigDecimal("1350.4200"), "ECOS", purchasedAt.minusDays(1)));
+        Holding saved = holdingRepository.save(holding);
+
+        Holding found = holdingRepository.findById(saved.getId()).orElseThrow();
+        assertThat(found.getPurchasedAt()).isEqualTo(purchasedAt);
+        assertThat(found.getPurchaseFxRateKrw()).isEqualByComparingTo("1350.4200");
+        assertThat(found.getPurchaseFxRateSource()).isEqualTo("ECOS");
+        assertThat(found.getPurchaseFxRateAsOf()).isEqualTo(purchasedAt.minusDays(1));
     }
 }
