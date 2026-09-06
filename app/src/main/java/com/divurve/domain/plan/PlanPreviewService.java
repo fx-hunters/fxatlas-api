@@ -19,7 +19,7 @@ import java.util.Objects;
 import java.util.UUID;
 
 /**
- * 계획 미리보기 엔진 (이슈 #18, 명세 3.1).
+ * 계획 미리보기 엔진 (이슈 #18) — <b>우선순위 P(구조만 준비)</b>.
  * 목표 정보·예산·투자성향으로부터 회차 계획을 미리보기한다. 저장하지 않는다.
  *
  * <p>핵심 책임:
@@ -30,6 +30,12 @@ import java.util.UUID;
  * - 달성 확률 계산 (몬테카를로)
  * - 비용 비교 (전략별)
  * - 집중도 변화 시뮬레이션
+ *
+ * <p><b>⚠ 요구사항 v2 §4.12 미확정 — 값은 후보이며 확정 요구사항이 아니다.</b> 안전/기회 버킷의
+ * 존재와 비율 · 목적별 하한선 · 권장 분할 회차 · 몬테카를로 적용 여부 · 달성 확률 정의가 전부
+ * 미확정이고, 기존 문서의 50/70/85/95% 와 4~8회는 후보값이다. API 명세 v2 §6 은 Route 계산
+ * 엔드포인트를 명세하지 않으므로, {@code route.enabled} 가 꺼진 기본 상태에서 이 서비스는
+ * 호출되지 않는다 — {@code PlanController} 가 진입 전에 501 로 막는다.
  */
 @UseCase
 public class PlanPreviewService {
@@ -97,8 +103,9 @@ public class PlanPreviewService {
 
     private void validateNotSpeculative(Goal goal) {
         if (goal.isSpeculative()) {
-            throw new ForbiddenException("SPECULATIVE_PURPOSE_BLOCKED",
-                    "투기성 목적의 계획은 생성할 수 없습니다");
+            // 에러코드는 명세 §1.3 의 6종만 쓴다(v1 의 SPECULATIVE_PURPOSE_BLOCKED 제거).
+            // 게이트 자체의 존폐는 명세 v2 §0.1·§8 미결정 — Route 강등 단계에서 다룬다.
+            throw new ForbiddenException("투기성 목적의 계획은 생성할 수 없습니다");
         }
     }
 
@@ -148,6 +155,11 @@ public class PlanPreviewService {
         long totalCostKrw = costCalculator.totalCost(safeAmountKrw, effectiveSpreadRatio, splitCount, 3000);
 
         // 달성 확률
+        // ⚠ 미확정 · 재현 불가 — seed 에 System.currentTimeMillis() 를 넣어 같은 입력에도 매번 다른
+        // 수치가 나온다. 달성 확률의 정의 자체가 요구사항 v2 §4.12 미확정이므로 지금 고치면
+        // 확정 전 수치를 고정해 버리는 셈이라 손대지 않고, route.enabled 로 호출 자체를 막았다.
+        // 정의가 확정되면 seed 를 (goalId, 계획 버전) 같은 결정적 값으로 바꾸고 커밋 타입 calc 로
+        // 변경 전/후 수치를 남긴다.
         double achieveProb = monteCarloSimulator.achievementProbability(
                 0.08,   // 기대 수익률 8%
                 0.15,   // 변동성 15%

@@ -1,0 +1,357 @@
+<title>Divurve 백엔드 지도</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Sans+KR:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500&display=swap">
+<style>
+:root{
+  --bg:#EFF2F5; --surface:#FFFFFF; --surface-2:#F7F9FA;
+  --ink:#0E1A24; --ink-2:#33454F; --muted:#61727F;
+  --rule:#D8E0E6; --rule-2:#E9EEF1;
+  --accent:#155E8C; --accent-soft:#E3EEF6;
+  --web:#155E8C; --usecase:#2C7A5B; --engine:#A05E17; --external:#77398F; --persist:#A03A2E;
+  --new:#2C7A5B; --gated:#A05E17;
+  --shadow:0 1px 2px rgba(14,26,36,.06), 0 8px 24px -16px rgba(14,26,36,.28);
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C131A; --surface:#131E27; --surface-2:#18242E;
+    --ink:#E4EDF3; --ink-2:#BACAD6; --muted:#8DA0AE;
+    --rule:#25353F; --rule-2:#1D2C36;
+    --accent:#63AEDC; --accent-soft:#152A38;
+    --web:#63AEDC; --usecase:#63BE96; --engine:#D89B4E; --external:#B98BD0; --persist:#DE8577;
+    --new:#63BE96; --gated:#D89B4E;
+    --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C131A; --surface:#131E27; --surface-2:#18242E;
+  --ink:#E4EDF3; --ink-2:#BACAD6; --muted:#8DA0AE;
+  --rule:#25353F; --rule-2:#1D2C36;
+  --accent:#63AEDC; --accent-soft:#152A38;
+  --web:#63AEDC; --usecase:#63BE96; --engine:#D89B4E; --external:#B98BD0; --persist:#DE8577;
+  --new:#63BE96; --gated:#D89B4E;
+  --shadow:0 1px 2px rgba(0,0,0,.4), 0 8px 24px -16px rgba(0,0,0,.7);
+}
+
+*{box-sizing:border-box}
+body{
+  background:var(--bg); color:var(--ink);
+  font-family:"IBM Plex Sans KR",system-ui,-apple-system,"Apple SD Gothic Neo","Malgun Gothic",sans-serif;
+  font-size:15px; line-height:1.7; padding:0 20px 96px;
+}
+.wrap{max-width:1080px; margin:0 auto}
+code,.mono{font-family:"IBM Plex Mono",ui-monospace,SFMono-Regular,Menlo,monospace}
+
+/* ---------- header ---------- */
+header{padding:56px 0 32px; border-bottom:2px solid var(--ink)}
+.eyebrow{font-size:12px; letter-spacing:.14em; text-transform:uppercase; color:var(--muted); font-weight:500}
+h1{font-size:clamp(30px,4.6vw,46px); line-height:1.18; margin:10px 0 0; font-weight:700; letter-spacing:-.02em; text-wrap:balance}
+.lede{margin:14px 0 0; max-width:62ch; color:var(--ink-2); font-size:16px}
+.stats{display:flex; flex-wrap:wrap; gap:32px; margin-top:30px}
+.stat b{display:block; font-size:26px; font-weight:600; font-variant-numeric:tabular-nums; letter-spacing:-.01em}
+.stat span{font-size:12.5px; color:var(--muted)}
+
+/* ---------- sections ---------- */
+section{padding-top:52px}
+h2{font-size:22px; font-weight:600; letter-spacing:-.01em; margin:0 0 6px; display:flex; align-items:baseline; gap:12px}
+h2::before{content:""; width:22px; height:3px; background:var(--accent); flex:0 0 auto; transform:translateY(-5px)}
+.sub{color:var(--muted); font-size:14px; margin:0 0 22px; max-width:66ch}
+h3{font-size:15px; font-weight:600; margin:26px 0 10px; color:var(--ink-2)}
+
+/* ---------- layer rail ---------- */
+.rail{display:grid; gap:10px}
+.layer{
+  display:grid; grid-template-columns:150px 1fr; gap:18px; align-items:start;
+  background:var(--surface); border:1px solid var(--rule); border-left:4px solid var(--c);
+  border-radius:3px; padding:14px 16px;
+}
+.layer .tag{font-weight:600; color:var(--c); font-size:13.5px}
+.layer .tag em{display:block; font-style:normal; font-weight:400; color:var(--muted); font-size:12px; margin-top:2px}
+.layer p{margin:0; font-size:14px; color:var(--ink-2)}
+.layer .who{margin-top:6px; font-size:12.5px; color:var(--muted)}
+.flowline{display:flex; align-items:center; gap:10px; color:var(--muted); font-size:12.5px; padding:2px 0 2px 4px}
+.flowline .bar{height:1px; background:var(--rule); flex:1}
+
+/* ---------- tree ---------- */
+.tree{background:var(--surface); border:1px solid var(--rule); border-radius:3px; overflow-x:auto}
+.tree table{border-collapse:collapse; width:100%; min-width:620px}
+.tree td{padding:7px 16px; border-bottom:1px solid var(--rule-2); vertical-align:top}
+.tree tr:last-child td{border-bottom:0}
+.tree td:first-child{width:44%; white-space:nowrap; font-family:"IBM Plex Mono",monospace; font-size:13px}
+.tree td:last-child{font-size:13.5px; color:var(--ink-2)}
+.depth1{padding-left:32px !important}
+.depth2{padding-left:52px !important}
+.tree .dim{color:var(--muted)}
+
+/* ---------- flows ---------- */
+.flow{background:var(--surface); border:1px solid var(--rule); border-radius:3px; padding:20px 22px; margin-bottom:16px}
+.flow header{padding:0; border:0}
+.flow .trigger{font-family:"IBM Plex Mono",monospace; font-size:13.5px; font-weight:500; color:var(--accent)}
+.flow ol{list-style:none; counter-reset:s; margin:16px 0 0; padding:0}
+.flow li{counter-increment:s; position:relative; padding:0 0 16px 34px; border-left:1px solid var(--rule); margin-left:9px}
+.flow li:last-child{border-left-color:transparent; padding-bottom:0}
+.flow li::before{
+  content:counter(s); position:absolute; left:-10px; top:0; width:19px; height:19px; border-radius:50%;
+  background:var(--surface); border:1px solid var(--rule); color:var(--muted);
+  font-size:11px; font-weight:500; display:grid; place-items:center; font-variant-numeric:tabular-nums;
+}
+.flow li b{font-family:"IBM Plex Mono",monospace; font-size:13px; font-weight:500; color:var(--ink)}
+.flow li .lay{font-size:11px; padding:1px 6px; border-radius:2px; margin-left:6px; color:var(--surface); background:var(--c)}
+.flow li p{margin:3px 0 0; font-size:13.5px; color:var(--ink-2)}
+
+/* ---------- endpoints ---------- */
+.tools{display:flex; gap:12px; align-items:center; flex-wrap:wrap; margin-bottom:16px}
+input[type=search]{
+  flex:1 1 260px; max-width:380px; font:inherit; font-size:14px; padding:9px 12px;
+  border:1px solid var(--rule); border-radius:3px; background:var(--surface); color:var(--ink);
+}
+input[type=search]:focus-visible{outline:2px solid var(--accent); outline-offset:1px; border-color:transparent}
+.legend{display:flex; gap:14px; font-size:12.5px; color:var(--muted); flex-wrap:wrap}
+.dot{display:inline-block; width:8px; height:8px; border-radius:2px; margin-right:5px; vertical-align:1px}
+.grp{margin-bottom:22px}
+.grp h3{display:flex; align-items:baseline; gap:10px; margin:0 0 8px}
+.grp h3 span{font-weight:400; font-size:12px; color:var(--muted); font-family:"IBM Plex Mono",monospace}
+.ep{background:var(--surface); border:1px solid var(--rule); border-radius:3px; overflow-x:auto}
+.ep table{border-collapse:collapse; width:100%; min-width:600px}
+.ep td{padding:6px 14px; border-bottom:1px solid var(--rule-2); font-size:13px}
+.ep tr:last-child td{border-bottom:0}
+.verb{font-family:"IBM Plex Mono",monospace; font-weight:500; width:74px; font-size:11.5px}
+.verb.GET{color:var(--usecase)} .verb.POST{color:var(--web)}
+.verb.PUT{color:var(--engine)} .verb.DELETE{color:var(--persist)}
+.path{font-family:"IBM Plex Mono",monospace}
+.owner{color:var(--muted); text-align:right; font-size:12px; white-space:nowrap}
+.badge{font-size:10.5px; padding:1px 6px; border-radius:2px; margin-left:8px; font-weight:500; white-space:nowrap}
+.badge.new{color:var(--new); border:1px solid var(--new)}
+.badge.gated{color:var(--gated); border:1px solid var(--gated)}
+#empty{display:none; color:var(--muted); font-size:14px; padding:16px 0}
+
+/* ---------- dip / misc ---------- */
+.pairs{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:10px}
+.pair{background:var(--surface); border:1px solid var(--rule); border-radius:3px; padding:12px 14px; font-size:13px}
+.pair .p{font-family:"IBM Plex Mono",monospace; font-weight:500}
+.pair .a{font-family:"IBM Plex Mono",monospace; color:var(--muted); font-size:12.5px; margin-top:3px}
+.pair .a::before{content:"↳ "; color:var(--external)}
+
+.mig{display:flex; flex-wrap:wrap; gap:7px}
+.mig span{
+  font-family:"IBM Plex Mono",monospace; font-size:12px; padding:5px 9px;
+  background:var(--surface); border:1px solid var(--rule); border-radius:3px; color:var(--ink-2);
+}
+.mig span.fresh{border-color:var(--new); color:var(--new)}
+
+.notes{display:grid; gap:1px; background:var(--rule); border:1px solid var(--rule); border-radius:3px; overflow:hidden}
+.note{background:var(--surface); padding:14px 16px}
+.note b{display:block; font-size:13.5px; margin-bottom:3px}
+.note p{margin:0; font-size:13.5px; color:var(--ink-2)}
+
+footer{margin-top:56px; padding-top:20px; border-top:1px solid var(--rule); color:var(--muted); font-size:12.5px}
+@media (prefers-reduced-motion:reduce){*{transition:none !important; animation:none !important}}
+@media (max-width:640px){
+  .layer{grid-template-columns:1fr; gap:6px}
+  .stats{gap:22px}
+}
+</style>
+
+<div class="wrap">
+<header>
+  <div class="eyebrow">divurve-api · Spring Boot 3 · Java 17</div>
+  <h1>백엔드 구조 지도</h1>
+  <p class="lede">외화 노출을 계산해 설명하는 백엔드다. 폴더가 어떤 역할을 맡는지, 요청 하나가 어떤 클래스를 거쳐 응답이 되는지, 어떤 규칙이 그 방향을 강제하는지를 한 장에 모았다.</p>
+  <div class="stats">
+    <div class="stat"><b id="s-ep">–</b><span>엔드포인트</span></div>
+    <div class="stat"><b id="s-cls">–</b><span>클래스</span></div>
+    <div class="stat"><b id="s-eng">–</b><span>engine 모듈 클래스</span></div>
+    <div class="stat"><b id="s-mig">–</b><span>마이그레이션</span></div>
+  </div>
+</header>
+
+<section>
+  <h2>레이어와 호출 방향</h2>
+  <p class="sub">클래스마다 레이어 어노테이션을 붙이고, 허용된 호출 방향을 ArchUnit 테스트가 빌드에서 강제한다. 어노테이션을 빠뜨리면 어느 레이어에도 속하지 않아 규칙에 걸리지 않으므로, 누락 자체가 결함이다.</p>
+  <div class="rail" id="rail"></div>
+</section>
+
+<section>
+  <h2>폴더가 나뉜 이유</h2>
+  <p class="sub">Gradle 모듈은 <code>engine</code>과 <code>app</code> 둘뿐이다. 나머지 구분은 전부 <code>app</code> 안의 패키지다. 계산은 프레임워크를 모르는 순수 함수로 격리해 두었다.</p>
+  <div class="tree">
+    <table>
+      <tr><td><b>engine/</b></td><td>계산 전담 모듈. Spring·JPA를 쓰지 않는다. 제품 주장의 근거라서 커버리지 100%를 요구한다.</td></tr>
+      <tr><td class="depth1">attribution · weight · concentration</td><td>손익 4분해, 환율 1% 민감도, 통화 집중도</td></tr>
+      <tr><td class="depth1">forecast · volatility</td><td>팬차트 구간, 변동성 백분위, 국면 분류와 배지 매핑</td></tr>
+      <tr><td class="depth1">stress · riskprofile · cost</td><td>충격 시나리오, 성향 점수, 스프레드·비용</td></tr>
+      <tr><td class="depth1 dim">bucket · split · simulate · plan</td><td class="dim">Route 계산. 값이 미확정이라 기능 플래그 뒤에 잠겨 있다</td></tr>
+      <tr><td><b>app/</b></td><td>나머지 전부. 레이어를 패키지로 나눈다.</td></tr>
+      <tr><td class="depth1">api/controller</td><td>HTTP 경계. 요청을 받아 서비스에 넘기고 DTO로 감싸 응답한다</td></tr>
+      <tr><td class="depth1">api/dto</td><td>요청·응답 전용 record. 계산이나 조회를 하지 않는다</td></tr>
+      <tr><td class="depth1">api/config</td><td>Swagger, 전역 예외 처리, 인증 인터셉터와 <code>@CurrentUser</code> 리졸버</td></tr>
+      <tr><td class="depth1">domain/…</td><td>업무 규칙과 영속화. 계산이 필요하면 engine에 위임한다</td></tr>
+      <tr><td class="depth2">domain/port</td><td>바깥 세계를 향한 인터페이스. 구현체가 어디 있는지 모른다</td></tr>
+      <tr><td class="depth1">infra/…</td><td>외부 연동 구현. 한국은행 환율, FRED 지표, JWT, Mock 제공자</td></tr>
+      <tr><td class="depth1">common/…</td><td>응답 봉투(<code>data</code>+<code>meta</code>), 예외 6종, 레이어 어노테이션 정의</td></tr>
+    </table>
+  </div>
+</section>
+
+<section>
+  <h2>요청 하나의 생애주기</h2>
+  <p class="sub">두 예시로 방향을 확인할 수 있다. 컨트롤러는 계산하지 않고, 계산기는 조회하지 않는다.</p>
+  <div id="flows"></div>
+</section>
+
+<section>
+  <h2>엔드포인트</h2>
+  <p class="sub">전부 <code>/api/v1</code> 아래에 있고, 응답은 항상 <code>data</code>와 <code>meta</code>로 감싼다. 경로나 이름으로 걸러 볼 수 있다.</p>
+  <div class="tools">
+    <input type="search" id="q" placeholder="경로 · 컨트롤러 이름으로 검색" aria-label="엔드포인트 검색">
+    <div class="legend">
+      <span><i class="dot" style="background:var(--new)"></i>이번에 신설</span>
+      <span><i class="dot" style="background:var(--gated)"></i>501 · 계산 미확정</span>
+    </div>
+  </div>
+  <div id="eps"></div>
+  <p id="empty">조건에 맞는 엔드포인트가 없다.</p>
+</section>
+
+<section>
+  <h2>바깥과 이어지는 지점</h2>
+  <p class="sub">도메인은 인터페이스만 알고, 구현체는 실행 시점에 주입된다. 그래서 도메인 코드는 자기를 움직이는 것이 한국은행 API인지 Mock인지 모른다.</p>
+  <div class="pairs" id="dip"></div>
+</section>
+
+<section>
+  <h2>스키마 이력</h2>
+  <p class="sub">Flyway가 순서대로 적용한다. 엔티티와 어긋나면 기동 자체가 실패하도록 검증 모드로 두었다.</p>
+  <div class="mig" id="mig"></div>
+</section>
+
+<section>
+  <h2>헷갈리기 쉬운 지점</h2>
+  <p class="sub">코드만 봐서는 이유를 알기 어려운 것들.</p>
+  <div class="notes">
+    <div class="note"><b>Spring Security를 쓰지 않는다</b><p>인터셉터가 토큰을 검증해 스레드 로컬에 담고, <code>@CurrentUser</code> 리졸버가 컨트롤러 인자로 꽂아 준다. 소유자 검증은 각 서비스가 한다.</p></div>
+    <div class="note"><b>계산기는 스캔 대상이 아니다</b><p>engine은 Spring을 모르므로 어노테이션이 스테레오타입이 아니다. 설정 클래스가 빈으로 일일이 등록한다. 등록을 빠뜨리면 기동이 실패한다.</p></div>
+    <div class="note"><b>Route 계열이 501을 반환한다</b><p>버킷 비율, 분할 회차, 달성 확률 정의가 전부 미확정이다. 코드는 남겨 두고 기능 플래그로 막아, 확정되지 않은 수치가 응답으로 나가지 않게 했다.</p></div>
+    <div class="note"><b>방향 전망은 계산에 넣지 않는다</b><p>예측 범위는 계산 입력으로 쓰지만, 참고 경로와 전망 동인은 표시 전용이다. Route 데이터 계약에서 아예 제외해 구조로 막았다.</p></div>
+    <div class="note"><b>출처는 실데이터일 때만 채운다</b><p>현재는 대부분 Mock이라 <code>meta.data_state</code>가 <code>mock</code>이고, 이때 출처 목록은 강제로 비워진다. 없는 근거를 만들어 내지 않기 위한 장치다.</p></div>
+    <div class="note"><b>엔화는 100엔 단위로 고시된다</b><p>한국은행이 엔화를 100엔당으로 주기 때문에 그대로 곱하면 100배가 된다. 환산은 전용 계산기 한 곳으로 모았다.</p></div>
+  </div>
+</section>
+
+<footer>
+  <span id="gen"></span> · 코드에서 자동 추출한 뒤 설명을 붙였다. 규칙의 출처는 레포 루트의 <code>CLAUDE.md</code>, 계약의 출처는 <code>docs/03-api-spec-v2.md</code>다.
+</footer>
+</div>
+
+<script id="arch" type="application/json">{"groups": [{"name": "인증 · 초기 설정", "req": "FR-IS", "rows": [{"m": "POST", "p": "/api/v1/auth/demo", "c": "AuthController", "t": ""}, {"m": "POST", "p": "/api/v1/auth/login", "c": "AuthController", "t": ""}, {"m": "POST", "p": "/api/v1/auth/refresh", "c": "AuthController", "t": ""}, {"m": "POST", "p": "/api/v1/auth/signup", "c": "AuthController", "t": ""}, {"m": "POST", "p": "/api/v1/me/onboarding/complete", "c": "MeController", "t": "new"}]}, {"name": "진단", "req": "FR-DG", "rows": [{"m": "GET", "p": "/api/v1/me/risk-profile", "c": "MeController", "t": ""}, {"m": "POST", "p": "/api/v1/me/risk-profile/detail", "c": "MeController", "t": "new"}, {"m": "POST", "p": "/api/v1/me/risk-profile/simple", "c": "MeController", "t": "new"}]}, {"name": "마이페이지", "req": "FR-MY", "rows": [{"m": "GET", "p": "/api/v1/me", "c": "MeController", "t": ""}, {"m": "PUT", "p": "/api/v1/me", "c": "MeController", "t": ""}, {"m": "GET", "p": "/api/v1/me/settings", "c": "MeController", "t": ""}, {"m": "PUT", "p": "/api/v1/me/settings", "c": "MeController", "t": ""}]}, {"name": "자산", "req": "FR-XR-07", "rows": [{"m": "GET", "p": "/api/v1/deposits", "c": "AssetController", "t": ""}, {"m": "POST", "p": "/api/v1/deposits", "c": "AssetController", "t": ""}, {"m": "DELETE", "p": "/api/v1/deposits/{id}", "c": "AssetController", "t": "new"}, {"m": "PUT", "p": "/api/v1/deposits/{id}", "c": "AssetController", "t": "new"}, {"m": "GET", "p": "/api/v1/holdings", "c": "AssetController", "t": ""}, {"m": "POST", "p": "/api/v1/holdings", "c": "AssetController", "t": ""}, {"m": "DELETE", "p": "/api/v1/holdings/{id}", "c": "AssetController", "t": ""}, {"m": "PUT", "p": "/api/v1/holdings/{id}", "c": "AssetController", "t": ""}, {"m": "GET", "p": "/api/v1/krw-assets", "c": "AssetController", "t": "new"}, {"m": "POST", "p": "/api/v1/krw-assets", "c": "AssetController", "t": "new"}, {"m": "DELETE", "p": "/api/v1/krw-assets/{id}", "c": "AssetController", "t": "new"}, {"m": "PUT", "p": "/api/v1/krw-assets/{id}", "c": "AssetController", "t": "new"}]}, {"name": "X-Ray", "req": "FR-XR", "rows": [{"m": "GET", "p": "/api/v1/xray", "c": "XrayController", "t": ""}, {"m": "GET", "p": "/api/v1/xray/attribution", "c": "XrayController", "t": ""}]}, {"name": "Fit", "req": "FR-FT", "rows": [{"m": "GET", "p": "/api/v1/fit", "c": "FitController", "t": "new"}, {"m": "POST", "p": "/api/v1/fit/preview", "c": "FitController", "t": "new"}]}, {"name": "Forecast", "req": "FR-FC", "rows": [{"m": "GET", "p": "/api/v1/events", "c": "ForecastController", "t": ""}, {"m": "GET", "p": "/api/v1/forecast", "c": "ForecastController", "t": ""}, {"m": "GET", "p": "/api/v1/forecast/factors", "c": "ForecastController", "t": ""}, {"m": "GET", "p": "/api/v1/forecast/model-performance", "c": "ForecastController", "t": ""}]}, {"name": "Stress Test", "req": "FR-ST", "rows": [{"m": "GET", "p": "/api/v1/stress/runs", "c": "StressController", "t": "new"}, {"m": "POST", "p": "/api/v1/stress/runs", "c": "StressController", "t": "new"}, {"m": "GET", "p": "/api/v1/stress/scenarios", "c": "StressController", "t": "new"}]}, {"name": "시장 상태", "req": "FR-SF", "rows": [{"m": "GET", "p": "/api/v1/market/regime", "c": "MarketController", "t": "new"}]}, {"name": "홈 · 공통", "req": "FR-HM / FR-CM", "rows": [{"m": "GET", "p": "/api/v1/banks/{bank_code}/fx-terms", "c": "MasterController", "t": ""}, {"m": "GET", "p": "/api/v1/currencies", "c": "MasterController", "t": ""}, {"m": "GET", "p": "/api/v1/home/summary", "c": "HomeController", "t": ""}, {"m": "GET", "p": "/api/v1/notifications", "c": "NotificationController", "t": ""}]}, {"name": "AI 설명", "req": "FR-AI", "rows": [{"m": "POST", "p": "/api/v1/ai/explain", "c": "AiController", "t": ""}, {"m": "POST", "p": "/api/v1/ai/parse-goal", "c": "AiController", "t": ""}]}, {"name": "Route 연결 (P)", "req": "FR-RT", "rows": [{"m": "GET", "p": "/api/v1/goals", "c": "GoalController", "t": ""}, {"m": "POST", "p": "/api/v1/goals", "c": "GoalController", "t": "gated"}, {"m": "DELETE", "p": "/api/v1/goals/{id}", "c": "GoalController", "t": "gated"}, {"m": "GET", "p": "/api/v1/goals/{id}", "c": "GoalController", "t": ""}, {"m": "PUT", "p": "/api/v1/goals/{id}", "c": "GoalController", "t": "gated"}, {"m": "GET", "p": "/api/v1/goals/{id}/plans", "c": "PlanController", "t": "gated"}, {"m": "POST", "p": "/api/v1/goals/{id}/plans", "c": "PlanController", "t": "gated"}, {"m": "GET", "p": "/api/v1/goals/{id}/plans/active", "c": "PlanController", "t": "gated"}, {"m": "POST", "p": "/api/v1/plans/preview", "c": "PlanController", "t": "gated"}, {"m": "POST", "p": "/api/v1/plans/{id}/steps/{seq}/complete", "c": "PlanController", "t": "gated"}, {"m": "POST", "p": "/api/v1/plans/{id}/steps/{seq}/skip", "c": "PlanController", "t": "gated"}, {"m": "GET", "p": "/api/v1/route/context", "c": "RouteController", "t": "new"}]}, {"name": "개발용", "req": "명세 외", "rows": [{"m": "GET", "p": "/api/v1/connectivity-checks", "c": "ConnectivityCheckController", "t": ""}, {"m": "POST", "p": "/api/v1/connectivity-checks", "c": "ConnectivityCheckController", "t": ""}, {"m": "GET", "p": "/api/v1/health/ping", "c": "ConnectivityCheckController", "t": ""}]}], "migrations": ["V10__krw_assets.sql", "V11__stress.sql", "V1__create_connectivity_check.sql", "V2__create_domain_entities.sql", "V3__create_me_risk_profile_settings.sql", "V4__rename_deposits_to_fx_deposits.sql", "V5__user_settings_explain_level.sql", "V6__asset_purchase_context.sql", "V7__auth_signup.sql", "V8__user_settings_notifications.sql", "V9__risk_profile_v2.sql"], "layers": {"EngineComponent": ["AttributionCalculator", "BucketAllocator", "ConcentrationCalculator", "ConcentrationThresholdTable", "CostCalculator", "DetailDiagnosisMapper", "DiversificationSimulator", "EffectiveSpreadCalculator", "EngineConfig", "MarketChecks", "MonteCarloSimulator", "QuoteUnitNormalizer", "RegimeBadgeMapper", "RegimeClassifier", "RiskProfileScorer", "SplitVarianceReducer", "StressCalculator", "WeightCalculator"], "UseCase": ["AiResponseValidator", "AiService", "AuthDemoService", "AuthService", "ConnectivityCheckService", "DepositService", "ExternalDataConfig", "FitService", "ForecastService", "FxAssetValuator", "GoalService", "HoldingService", "HomeSummaryService", "KrwAssetService", "MarketRegimeService", "MasterDataService", "NarrativeFilter", "PlanAccessService", "PlanConfirmService", "PlanPreviewService", "PlanStepExecutionService", "PurchaseFxRateResolver", "RiskProfileService", "RouteContextService", "StressRunService", "StressScenarioService", "UserProfileService", "UserSettingsService", "XrayService"], "ExternalAdapter": ["EcosFxRateHistoryProvider", "EcosFxRateProvider", "FredMacroProvider", "JwtTokenProvider", "MockAiProvider", "MockEconomicEventProvider"], "WebAdapter": ["AiController", "AssetController", "AuthController", "ConnectivityCheckController", "FitController", "ForecastController", "GoalController", "HomeController", "MarketController", "MasterController", "MeController", "NotificationController", "PlanController", "RouteController", "StressController", "XrayController"], "PersistenceAdapter": ["ConnectivityCheckRepository", "UserRepository"]}, "dip": [{"port": "AiProvider", "adapter": "MockAiProvider", "mod": "com.divurve.infra.ai"}, {"port": "EconomicEventProvider", "adapter": "MockEconomicEventProvider", "mod": "com.divurve.infra.event"}, {"port": "FxRateHistoryProvider", "adapter": "EcosFxRateHistoryProvider", "mod": "com.divurve.infra.fxrate"}, {"port": "FxRateProvider", "adapter": "EcosFxRateProvider", "mod": "com.divurve.infra.fxrate"}, {"port": "MacroIndicatorProvider", "adapter": "FredMacroProvider", "mod": "com.divurve.infra.macro"}, {"port": "TokenProvider", "adapter": "JwtTokenProvider", "mod": "com.divurve.infra.auth"}], "counts": {"classes": 211, "endpoints": 57, "migrations": 11, "engine": 27}}</script>
+<script>
+(function(){
+  var D = JSON.parse(document.getElementById('arch').textContent);
+
+  document.getElementById('s-ep').textContent  = D.counts.endpoints;
+  document.getElementById('s-cls').textContent = D.counts.classes;
+  document.getElementById('s-eng').textContent = D.counts.engine;
+  document.getElementById('s-mig').textContent = D.counts.migrations;
+
+  var LAYERS = [
+    ['WebAdapter','api/controller','var(--web)','HTTP 요청을 받아 응답 봉투로 감싼다. 계산도 조회도 하지 않는다.','아무도 이 층을 호출하지 못한다'],
+    ['UseCase','domain 서비스','var(--usecase)','업무 규칙과 트랜잭션. 필요한 계산은 engine에, 외부 조회는 포트에 맡긴다.','컨트롤러에서만 호출된다'],
+    ['EngineComponent','engine 계산기','var(--engine)','같은 입력이면 항상 같은 출력. 프레임워크도 DB도 모른다.','서비스에서만 호출된다'],
+    ['ExternalAdapter','infra 어댑터','var(--external)','환율·지표 같은 바깥 데이터를 가져온다. 포트 인터페이스를 구현한다.','서비스에서만 호출된다'],
+    ['PersistenceAdapter','저장소 구현','var(--persist)','영속화 담당.','서비스에서만 호출된다']
+  ];
+  var rail = document.getElementById('rail');
+  LAYERS.forEach(function(L, i){
+    var n = (D.layers[L[0]]||[]).length;
+    var el = document.createElement('div');
+    el.className = 'layer'; el.style.setProperty('--c', L[2]);
+    el.innerHTML = '<div class="tag">@'+L[0]+'<em>'+L[1]+' · '+n+'개</em></div>'
+                 + '<div><p>'+L[3]+'</p><div class="who">'+L[4]+'</div></div>';
+    rail.appendChild(el);
+    if(i < LAYERS.length-1){
+      var f = document.createElement('div');
+      f.className='flowline'; f.innerHTML='<span class="bar"></span><span>아래로만 호출</span><span class="bar"></span>';
+      rail.appendChild(f);
+    }
+  });
+
+  var FLOWS = [
+    {t:'GET /api/v1/xray', d:'외화 비중·통화 노출·집중도·환율 민감도를 한 번에 계산해 돌려준다.', s:[
+      ['AuthTokenInterceptor','web','토큰을 검증해 사용자 식별자를 스레드 로컬에 담는다'],
+      ['CurrentUserArgumentResolver','web','컨트롤러 인자로 사용자 식별자를 주입한다. 없으면 401'],
+      ['XrayController.getXray','web','서비스를 호출하고 결과를 응답 DTO로 감싼다'],
+      ['XrayService.getPortfolio','usecase','보유 종목·외화 예금·원화 자산을 모아 현재 환율로 환산한다'],
+      ['FxRateProvider','external','한국은행 어댑터가 현재 환율을 가져온다'],
+      ['WeightCalculator · ConcentrationCalculator','engine','비중, 1% 민감도, 집중도와 기준선 초과 여부를 계산한다'],
+      ['ApiResponse + Meta','web','기준 시각과 데이터 상태를 붙여 봉투로 감싼다']
+    ]},
+    {t:'POST /api/v1/stress/runs', d:'주가와 환율 충격을 가정해 자산 변화를 계산하고 이력으로 남긴다.', s:[
+      ['StressController.run','web','시나리오 코드를 받아 서비스에 넘긴다'],
+      ['StressRunService','usecase','시나리오 마스터를 읽고 현재 자산을 조회한다'],
+      ['StressCalculator.applyScenario','engine','주가 충격을 먼저 적용하고 남은 금액에 환율 충격을 적용해 두 효과를 분리한다'],
+      ['StressTestRunRepository','persist','실행 결과를 저장한다'],
+      ['201 Created','web','충격값·기준일·가정을 함께 실어 예측이 아님을 명시한다']
+    ]}
+  ];
+  var LC = {web:'var(--web)', usecase:'var(--usecase)', engine:'var(--engine)', external:'var(--external)', persist:'var(--persist)'};
+  var fw = document.getElementById('flows');
+  FLOWS.forEach(function(F){
+    var d = document.createElement('div'); d.className='flow';
+    var li = F.s.map(function(s){
+      return '<li><b>'+s[0]+'</b><span class="lay" style="--c:'+LC[s[1]]+'">'+s[1]+'</span><p>'+s[2]+'</p></li>';
+    }).join('');
+    d.innerHTML = '<div class="trigger">'+F.t+'</div><p class="sub" style="margin:6px 0 0">'+F.d+'</p><ol>'+li+'</ol>';
+    fw.appendChild(d);
+  });
+
+  var eps = document.getElementById('eps');
+  D.groups.forEach(function(g){
+    var rows = g.rows.map(function(r){
+      var b = r.t === 'new' ? '<span class="badge new">신설</span>'
+            : r.t === 'gated' ? '<span class="badge gated">501</span>' : '';
+      return '<tr data-k="'+(r.p+' '+r.c).toLowerCase()+'"><td class="verb '+r.m+'">'+r.m+'</td>'
+           + '<td class="path">'+r.p.replace('/api/v1','')+b+'</td>'
+           + '<td class="owner">'+r.c+'</td></tr>';
+    }).join('');
+    var d = document.createElement('div'); d.className='grp';
+    d.innerHTML = '<h3>'+g.name+(g.req?' <span>'+g.req+'</span>':'')+'</h3><div class="ep"><table>'+rows+'</table></div>';
+    eps.appendChild(d);
+  });
+
+  var q = document.getElementById('q'), empty = document.getElementById('empty');
+  q.addEventListener('input', function(){
+    var v = q.value.trim().toLowerCase(), any = false;
+    document.querySelectorAll('.grp').forEach(function(g){
+      var shown = 0;
+      g.querySelectorAll('tr').forEach(function(tr){
+        var hit = !v || tr.dataset.k.indexOf(v) > -1;
+        tr.hidden = !hit; if(hit) shown++;
+      });
+      g.hidden = shown === 0; if(shown) any = true;
+    });
+    empty.style.display = any ? 'none' : 'block';
+  });
+
+  var dip = document.getElementById('dip');
+  if(D.dip.length){
+    D.dip.forEach(function(p){
+      var d = document.createElement('div'); d.className='pair';
+      d.innerHTML = '<div class="p">'+p.port+'</div><div class="a">'+p.adapter+'</div>';
+      dip.appendChild(d);
+    });
+  } else {
+    dip.innerHTML = '<div class="pair">포트 구현 쌍을 찾지 못했다.</div>';
+  }
+
+  var mig = document.getElementById('mig');
+  D.migrations.forEach(function(m){
+    var s = document.createElement('span');
+    if(/^V(9|10|11)__/.test(m)) s.className = 'fresh';
+    s.textContent = m.replace('.sql','');
+    mig.appendChild(s);
+  });
+
+  document.getElementById('gen').textContent =
+    new Date().toLocaleDateString('ko-KR', {year:'numeric', month:'long', day:'numeric'}) + ' 기준';
+})();
+</script>

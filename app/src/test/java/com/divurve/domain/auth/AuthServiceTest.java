@@ -7,17 +7,25 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.divurve.domain.auth.AuthService.AuthResult;
 import com.divurve.domain.port.AuthPrincipal;
 import com.divurve.domain.port.AuthTokens;
 import com.divurve.domain.port.TokenProvider;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
+import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
+/**
+ * {@link AuthService} 단위 테스트 — 가입·로그인·토큰 갱신.
+ *
+ * <p>로그인·갱신 결과에는 {@code onboarded}(초기 설정 완료 여부)가 함께 실린다 —
+ * 클라이언트는 이 값 하나로 초기 설정으로 보낼지 정한다(FR-IS-01·FR-IS-07).
+ */
 class AuthServiceTest {
 
     private AuthService authService;
@@ -88,7 +96,6 @@ class AuthServiceTest {
 
     @Test
     void signup_nameNull() {
-        when(userRepository.findByEmail("email@example.com")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> authService.signup("email@example.com", "password", null, "PURPOSE"))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("name must not be null");
@@ -96,7 +103,6 @@ class AuthServiceTest {
 
     @Test
     void signup_purposeNull() {
-        when(userRepository.findByEmail("email@example.com")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> authService.signup("email@example.com", "password", "name", null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("onboardingPurpose must not be null");
@@ -106,21 +112,34 @@ class AuthServiceTest {
     void login_success() {
         String email = "user@example.com";
         String password = "password123";
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
-        String passwordHash = encoder.encode(password);
+        String passwordHash = new BCryptPasswordEncoder().encode(password);
 
         User user = User.create(email, "User Name", passwordHash, "OVERSEAS_INVESTMENT");
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(tokenProvider.issue(user.getId(), false)).thenReturn(new AuthTokens("access", "refresh", 1800));
 
-        AuthTokens expectedTokens = new AuthTokens("access", "refresh", 1800);
-        when(tokenProvider.issue(user.getId(), false)).thenReturn(expectedTokens);
+        AuthResult result = authService.login(email, password);
 
-        AuthTokens result = authService.login(email, password);
-
-        assertThat(result.accessToken()).isEqualTo("access");
-        assertThat(result.refreshToken()).isEqualTo("refresh");
+        assertThat(result.tokens().accessToken()).isEqualTo("access");
+        assertThat(result.tokens().refreshToken()).isEqualTo("refresh");
+        // 초기 설정을 마치지 않은 계정 — 클라이언트는 초기 설정으로 보낸다.
+        assertThat(result.onboarded()).isFalse();
         verify(userRepository).findByEmail(email);
         verify(tokenProvider).issue(user.getId(), false);
+    }
+
+    @Test
+    void login_초기설정을_마친_사용자는_onboarded_true() {
+        String email = "done@example.com";
+        String password = "password123";
+        String passwordHash = new BCryptPasswordEncoder().encode(password);
+
+        User user = User.create(email, "User Name", passwordHash, "OVERSEAS_INVESTMENT");
+        user.completeOnboarding(Instant.parse("2026-09-01T15:30:00Z"));
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
+        when(tokenProvider.issue(user.getId(), false)).thenReturn(new AuthTokens("access", "refresh", 1800));
+
+        assertThat(authService.login(email, password).onboarded()).isTrue();
     }
 
     @Test
@@ -140,8 +159,7 @@ class AuthServiceTest {
         String email = "user@example.com";
         String password = "password123";
         String wrongPassword = "wrongpassword";
-        BCryptPasswordEncoder encoder = new BCryptPasswordEncoder();
-        String passwordHash = encoder.encode(password);
+        String passwordHash = new BCryptPasswordEncoder().encode(password);
 
         User user = User.create(email, "User Name", passwordHash, "OVERSEAS_INVESTMENT");
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
@@ -160,7 +178,6 @@ class AuthServiceTest {
 
     @Test
     void login_passwordNull() {
-        when(userRepository.findByEmail("email@example.com")).thenReturn(Optional.empty());
         assertThatThrownBy(() -> authService.login("email@example.com", null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("password must not be null");
@@ -170,19 +187,37 @@ class AuthServiceTest {
     void refreshAccessToken_success() {
         String refreshToken = "refresh_token";
         UUID userId = UUID.randomUUID();
-        AuthPrincipal principal = new AuthPrincipal(userId, false);
 
-        when(tokenProvider.verifyRefreshToken(refreshToken)).thenReturn(Optional.of(principal));
-        AuthTokens newTokens = new AuthTokens("new_access", "refresh", 1800);
-        when(tokenProvider.issue(userId, false)).thenReturn(newTokens);
+        when(tokenProvider.verifyRefreshToken(refreshToken))
+                .thenReturn(Optional.of(new AuthPrincipal(userId, false)));
+        when(tokenProvider.issue(userId, false)).thenReturn(new AuthTokens("new_access", "refresh", 1800));
 
-        AuthTokens result = authService.refreshAccessToken(refreshToken);
+        User user = User.create("user@example.com", "User Name", "hashed", "OVERSEAS_INVESTMENT");
+        user.completeOnboarding(Instant.parse("2026-09-01T15:30:00Z"));
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
-        assertThat(result.accessToken()).isEqualTo("new_access");
-        assertThat(result.refreshToken()).isEqualTo(refreshToken);
-        assertThat(result.accessTokenTtlSeconds()).isEqualTo(1800);
+        AuthResult result = authService.refreshAccessToken(refreshToken);
+
+        assertThat(result.tokens().accessToken()).isEqualTo("new_access");
+        assertThat(result.tokens().refreshToken()).isEqualTo(refreshToken);
+        assertThat(result.tokens().accessTokenTtlSeconds()).isEqualTo(1800);
+        assertThat(result.onboarded()).isTrue();
         verify(tokenProvider).verifyRefreshToken(refreshToken);
         verify(tokenProvider).issue(userId, false);
+    }
+
+    /** 토큰은 유효한데 사용자 행이 사라진 경우 — 갱신은 되지만 초기 설정 미완료로 본다. */
+    @Test
+    void refreshAccessToken_사용자를_찾지_못하면_onboarded_false() {
+        String refreshToken = "refresh_token";
+        UUID userId = UUID.randomUUID();
+
+        when(tokenProvider.verifyRefreshToken(refreshToken))
+                .thenReturn(Optional.of(new AuthPrincipal(userId, false)));
+        when(tokenProvider.issue(userId, false)).thenReturn(new AuthTokens("new_access", "refresh", 1800));
+        when(userRepository.findById(userId)).thenReturn(Optional.empty());
+
+        assertThat(authService.refreshAccessToken(refreshToken).onboarded()).isFalse();
     }
 
     @Test

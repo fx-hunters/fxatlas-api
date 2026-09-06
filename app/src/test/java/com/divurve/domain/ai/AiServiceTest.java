@@ -2,24 +2,29 @@ package com.divurve.domain.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
-import static org.mockito.ArgumentMatchers.anyMap;
-import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.divurve.domain.port.AiProvider;
+import com.divurve.domain.port.AiProvider.ExplainContext;
+import com.divurve.domain.port.AiProvider.ExplainResult;
+import com.divurve.domain.settings.SettingsView;
+import com.divurve.domain.settings.UserSettingsService;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link AiService} 유스케이스 테스트.
- * explain: 수치 대조 + 필터링 + 재시도 로직
- * parseGoal: confidence 반환 검증
+ * {@link AiService} 유스케이스 테스트 (API 명세 v2 §5.12).
+ * 성공 시 그대로 반환, 검증 실패 시 폴백(H1 대응 — 400 이 아니라 200 + fallback:true), 사용자 설정에서
+ * explain_level·explain_domain 을 읽는지(M2 대응)를 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
 class AiServiceTest {
@@ -33,142 +38,102 @@ class AiServiceTest {
     @Mock
     private NarrativeFilter narrativeFilter;
 
-    @Test
-    void explain_수치가_일치하면_필터링된_서술을_반환한다() {
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
-        String originalNarrative = "귀사의 자산은 100000입니다.";
-        String filteredNarrative = "귀사의 자산은 100000입니다.";
+    @Mock
+    private UserSettingsService userSettingsService;
 
-        when(aiProvider.explain("concise", metrics))
-                .thenReturn(new AiProvider.ExplainResult(originalNarrative));
-        when(validator.validateNarrative(originalNarrative, metrics))
-                .thenReturn(true);
-        when(narrativeFilter.filter(originalNarrative))
-                .thenReturn(filteredNarrative);
+    private final UUID userId = UUID.randomUUID();
+    private final Map<String, Object> facts = Map.of("amount", 100000.0);
 
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-        String result = service.explain("concise", metrics);
+    private AiService service;
 
-        assertThat(result).isEqualTo(filteredNarrative);
+    @BeforeEach
+    void setUp() {
+        service = new AiService(aiProvider, validator, narrativeFilter, userSettingsService);
+    }
+
+    private void stubSettings(String level, String domain) {
+        when(userSettingsService.getSettings(userId)).thenReturn(new SettingsView(
+                null, 0.0, level, domain, 0.0, 0.0, true, true, true, false, true));
     }
 
     @Test
-    void explain_수치_불일치시_재시도한다() {
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
-        String validNarrative = "귀사의 자산은 100000입니다.";
+    void explain_수치와_표현이_모두_통과하면_그대로_반환한다() {
+        stubSettings("standard", "finance");
+        List<String> sentences = List.of("자산은 100000입니다.");
+        when(aiProvider.explain(any(ExplainContext.class))).thenReturn(new ExplainResult(sentences));
+        when(validator.verify(sentences, facts)).thenReturn(true);
+        when(narrativeFilter.detect("자산은 100000입니다.")).thenReturn(List.of());
 
-        when(aiProvider.explain("concise", metrics))
-                .thenReturn(new AiProvider.ExplainResult("잘못된 수치 999999입니다."))
-                .thenReturn(new AiProvider.ExplainResult("또 잘못된 수치 888888입니다."))
-                .thenReturn(new AiProvider.ExplainResult(validNarrative));
-        when(validator.validateNarrative("잘못된 수치 999999입니다.", metrics))
-                .thenReturn(false);
-        when(validator.validateNarrative("또 잘못된 수치 888888입니다.", metrics))
-                .thenReturn(false);
-        when(validator.validateNarrative(validNarrative, metrics))
-                .thenReturn(true);
-        when(narrativeFilter.filter(validNarrative))
-                .thenReturn(validNarrative);
+        AiService.ExplainOutcome outcome = service.explain(userId, "profile_fit", facts);
 
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-        String result = service.explain("concise", metrics);
-
-        assertThat(result).isEqualTo(validNarrative);
-        verify(aiProvider, times(3)).explain("concise", metrics);
+        assertThat(outcome.sentences()).isEqualTo(sentences);
+        assertThat(outcome.fallback()).isFalse();
+        assertThat(outcome.numericMatch()).isTrue();
+        assertThat(outcome.blockedPhrases()).isEmpty();
+        assertThat(outcome.explainLevel()).isEqualTo("standard");
+        assertThat(outcome.explainDomain()).isEqualTo("finance");
     }
 
     @Test
-    void explain_최대_재시도_초과시_null을_반환한다() {
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
+    void explain_수치_불일치가_재시도_후에도_계속되면_폴백을_반환한다() {
+        stubSettings("simple", "plain");
+        List<String> bad = List.of("자산은 999999입니다.");
+        when(aiProvider.explain(any(ExplainContext.class))).thenReturn(new ExplainResult(bad));
+        when(validator.verify(bad, facts)).thenReturn(false);
+        when(narrativeFilter.detect("자산은 999999입니다.")).thenReturn(List.of());
 
-        when(aiProvider.explain("concise", metrics))
-                .thenReturn(new AiProvider.ExplainResult("잘못된 수치입니다."));
-        when(validator.validateNarrative(anyString(), anyMap()))
-                .thenReturn(false);
+        AiService.ExplainOutcome outcome = service.explain(userId, "profile_fit", facts);
 
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-        String result = service.explain("concise", metrics);
-
-        assertThat(result).isNull();
-        verify(aiProvider, times(3)).explain("concise", metrics);
+        assertThat(outcome.fallback()).isTrue();
+        assertThat(outcome.sentences()).isEqualTo(AiService.FALLBACK_SENTENCES);
+        // H1 — 실패해도 numericMatch 는 true 로 보고한다(폴백 문장은 수치를 담지 않는다).
+        assertThat(outcome.numericMatch()).isTrue();
+        assertThat(outcome.blockedPhrases()).isEmpty();
+        verify(aiProvider, times(AiService.MAX_ATTEMPTS)).explain(any(ExplainContext.class));
     }
 
     @Test
-    void explain_profile이_null이면_NullPointerException을_던진다() {
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
+    void explain_금지_표현이_발견되면_폴백을_반환한다() {
+        stubSettings("simple", "plain");
+        List<String> risky = List.of("반드시 매수하세요.");
+        when(aiProvider.explain(any(ExplainContext.class))).thenReturn(new ExplainResult(risky));
+        when(validator.verify(risky, facts)).thenReturn(true);
+        when(narrativeFilter.detect("반드시 매수하세요.")).thenReturn(List.of("반드시", "매수하세요"));
 
-        assertThatThrownBy(() -> service.explain(null, Map.of("amount", 100.0)))
+        AiService.ExplainOutcome outcome = service.explain(userId, "profile_fit", facts);
+
+        assertThat(outcome.fallback()).isTrue();
+        assertThat(outcome.sentences()).isEqualTo(AiService.FALLBACK_SENTENCES);
+    }
+
+    @Test
+    void explain_사용자_설정의_explainLevel_explainDomain을_provider에게_전달한다() {
+        stubSettings("detailed", "dev");
+        List<String> sentences = List.of("변동성 지표는 5년 백분위 72%에 해당합니다.");
+        when(aiProvider.explain(any(ExplainContext.class))).thenReturn(new ExplainResult(sentences));
+        when(validator.verify(sentences, facts)).thenReturn(true);
+        when(narrativeFilter.detect(sentences.get(0))).thenReturn(List.of());
+
+        service.explain(userId, "forecast_summary", facts);
+
+        verify(aiProvider).explain(new ExplainContext("forecast_summary", facts, "detailed", "dev"));
+    }
+
+    @Test
+    void explain_userId가_null이면_NullPointerException을_던진다() {
+        assertThatThrownBy(() -> service.explain(null, "profile_fit", facts))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
-    void explain_metrics가_null이면_NullPointerException을_던진다() {
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-
-        assertThatThrownBy(() -> service.explain("concise", null))
+    void explain_surface가_null이면_NullPointerException을_던진다() {
+        assertThatThrownBy(() -> service.explain(userId, null, facts))
                 .isInstanceOf(NullPointerException.class);
     }
 
     @Test
-    void parseGoal_자연어를_구조화하고_confidence를_반환한다() {
-        Map<String, Double> confidence = Map.of(
-                "kind", 0.95,
-                "purpose", 0.90,
-                "currencyCode", 0.98);
-        List<String> missing = List.of();
-
-        when(aiProvider.parseGoal("월 1000달러 저축"))
-                .thenReturn(new AiProvider.ParseResult(
-                        "wealth",
-                        "retirement",
-                        "USD",
-                        1000.0,
-                        "monthly",
-                        confidence,
-                        missing));
-
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-        AiService.ParsedGoal result = service.parseGoal("월 1000달러 저축");
-
-        assertThat(result.kind()).isEqualTo("wealth");
-        assertThat(result.purpose()).isEqualTo("retirement");
-        assertThat(result.currencyCode()).isEqualTo("USD");
-        assertThat(result.targetAmount()).isEqualTo(1000.0);
-        assertThat(result.recurInterval()).isEqualTo("monthly");
-        assertThat(result.confidence()).containsEntry("kind", 0.95);
-        assertThat(result.missing()).isEmpty();
-    }
-
-    @Test
-    void parseGoal_text가_null이면_NullPointerException을_던진다() {
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-
-        assertThatThrownBy(() -> service.parseGoal(null))
+    void explain_facts가_null이면_NullPointerException을_던진다() {
+        assertThatThrownBy(() -> service.explain(userId, "profile_fit", null))
                 .isInstanceOf(NullPointerException.class);
-    }
-
-    @Test
-    void parseGoal_낮은_confidence는_클라이언트에_전달되어_재확인을_권고한다() {
-        Map<String, Double> confidence = Map.of(
-                "kind", 0.95,
-                "purpose", 0.45,  // 낮은 신뢰도
-                "currencyCode", 0.98);
-
-        when(aiProvider.parseGoal("목표 저축 (불명확)"))
-                .thenReturn(new AiProvider.ParseResult(
-                        "wealth",
-                        "education",
-                        "USD",
-                        null,
-                        "monthly",
-                        confidence,
-                        List.of("targetAmount")));
-
-        AiService service = new AiService(aiProvider, validator, narrativeFilter);
-        AiService.ParsedGoal result = service.parseGoal("목표 저축 (불명확)");
-
-        // 낮은 confidence 도 그대로 전달되어, 클라이언트가 사용자 확인을 받을 수 있게 함
-        assertThat(result.confidence().get("purpose")).isLessThan(0.5);
-        assertThat(result.missing()).contains("targetAmount");
     }
 }

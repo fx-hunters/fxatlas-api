@@ -1,196 +1,136 @@
 package com.divurve.api.controller;
 
-import static org.assertj.core.api.Assertions.assertThat;
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.divurve.api.dto.forecast.EventsResponse;
+import com.divurve.api.dto.forecast.FactorsResponse;
+import com.divurve.api.dto.forecast.ForecastResponse;
+import com.divurve.api.dto.forecast.ModelPerformanceResponse;
+import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.forecast.ForecastService;
-import com.divurve.domain.port.FxRateHistoryProvider;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.util.ArrayList;
 import java.util.List;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+/**
+ * {@link ForecastController} 검증.
+ *
+ * <p>이전 컨트롤러는 응답을 직접 조립하면서 {@code TODO} 와 상수 0 을 채워 넣었다. 이제 컨트롤러는
+ * 서비스 결과를 DTO 로 옮기고 {@code meta} 를 붙이는 일만 한다 — 그 일만 하는지를 확인한다.
+ */
+@DisplayName("ForecastController")
 class ForecastControllerTest {
 
-    private ForecastController controller;
-    private ForecastService mockService;
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final LocalDate BASE_DATE = LocalDate.of(2026, 9, 1);
 
-    private ForecastService.ForecastData mockForecastData;
-    private List<ForecastService.ForecastFactor> mockFactors;
-    private ForecastService.ModelPerformanceData mockModelPerf;
-    private List<ForecastService.EconomicEventData> mockEvents;
+    private ForecastService service;
+    private ForecastController controller;
 
     @BeforeEach
     void setUp() {
-        mockService = mock(ForecastService.class);
-        controller = new ForecastController(mockService);
-
-        // Mock forecast data
-        mockForecastData = new ForecastService.ForecastData(
-            "USD_KRW",
-            30,
-            1200.0,
-            createBaseline(),
-            createHistory(),
-            createPathPoints(),
-            0.15,
-            50,
-            "Normal"
-        );
-
-        // Mock factors
-        mockFactors = List.of(
-            new ForecastService.ForecastFactor("fed_rate", "Federal Reserve Rate", 0.35, "Bullish"),
-            new ForecastService.ForecastFactor("risk_sentiment", "Risk Sentiment", -0.25, "Bearish"),
-            new ForecastService.ForecastFactor("gdp", "GDP Growth", 0.15, "Neutral")
-        );
-
-        // Mock model performance
-        mockModelPerf = new ForecastService.ModelPerformanceData(
-            "USD_KRW",
-            30,
-            0.62,
-            15.5,
-            0.78,
-            45.3,
-            0.48,
-            18.2
-        );
-
-        // Mock events
-        mockEvents = List.of(
-            new ForecastService.EconomicEventData(
-                LocalDate.now().plusDays(3).toString(),
-                "Fed Rate Decision",
-                "USD",
-                "High"
-            )
-        );
+        service = mock(ForecastService.class);
+        controller = new ForecastController(service);
     }
 
     @Test
-    void testGetForecast_Success() {
-        when(mockService.getForecast("USD_KRW", 30)).thenReturn(mockForecastData);
+    @DisplayName("meta 에 model_version 과 regime 을 함께 싣는다")
+    void forecastMeta() {
+        when(service.getForecast(USER_ID, "USDKRW", 30)).thenReturn(forecastView());
 
-        var response = controller.getForecast("USD_KRW", 30);
+        ApiResponse<ForecastResponse> response = controller.getForecast(USER_ID, "USDKRW", 30);
 
-        assertNotNull(response);
-        assertThat(response.data().pairCode()).isEqualTo("USD_KRW");
-        assertThat(response.data().horizonDays()).isEqualTo(30);
-        verify(mockService, times(1)).getForecast("USD_KRW", 30);
+        assertEquals(ForecastService.MODEL_VERSION, response.meta().modelVersion());
+        assertEquals("elevated", response.meta().regime());
+        assertEquals("USDKRW", response.data().pairCode());
+        assertEquals(BASE_DATE, response.data().baseDate());
+        assertEquals(1, response.data().band().size());
+        assertEquals(BASE_DATE.plusDays(30), response.data().band().get(0).d());
+        assertEquals("elevated", response.data().volatility().regime());
+        assertEquals(157_900L, response.data().userImpact().per1pctKrw());
+        assertEquals("예측 범위 / 불확실성 구간", response.data().labels().band());
+        assertEquals(1, response.data().modelPath().size());
+        assertEquals(1, response.data().history().size());
     }
 
     @Test
-    void testGetForecast_MapsLastPathPointIntoInterval80() {
-        when(mockService.getForecast("USD_KRW", 30)).thenReturn(mockForecastData);
+    @DisplayName("성적표 응답에는 model_version 만 싣는다 — 시장 국면 수치를 동반하지 않는다")
+    void modelPerformanceMeta() {
+        when(service.getModelPerformance("USDKRW", 90)).thenReturn(performanceView());
 
-        var response = controller.getForecast("USD_KRW", 30);
+        ApiResponse<ModelPerformanceResponse> response =
+                controller.getModelPerformance("USDKRW", 90);
 
-        // 마지막 경로 포인트(t=30)의 80% 구간이 그대로 interval_80 이 된다.
-        var interval = response.data().interval80();
-        assertEquals(1150.0 + 30 * 0.5, interval.lo(), 1e-9);
-        assertEquals(1250.0 + 30 * 0.5, interval.hi(), 1e-9);
-        assertEquals((interval.hi() - interval.lo()) / 1200.0, interval.widthPct(), 1e-9);
-
-        assertThat(response.data().history()).hasSize(100);
-        assertThat(response.data().path()).hasSize(31);
-        assertThat(response.data().modelPath()).isEmpty();
-        assertThat(response.data().volatility().regime()).isEqualTo("Normal");
-        assertThat(response.data().volatility().percentile5y()).isEqualTo(50);
-        assertEquals(1200.0, response.data().baseRate(), 1e-9);
+        assertEquals(ForecastService.MODEL_VERSION, response.meta().modelVersion());
+        assertNull(response.meta().regime());
+        assertEquals(0.0, response.data().rwImprovement());
+        assertEquals(24, response.data().validation().folds());
+        assertTrue(response.data().validation().leakageGuard());
+        assertEquals(0.81, response.data().model().coverage80());
+        assertEquals(0.058, response.data().model().avgWidth());
+        assertEquals(Instant.parse("2026-08-31T00:00:00Z"), response.data().evaluatedAt());
     }
 
     @Test
-    void testGetForecast_EmptyPathPointsFallsBackToCurrentRate() {
-        ForecastService.ForecastData empty = new ForecastService.ForecastData(
-            "USD_KRW",
-            30,
-            1200.0,
-            createBaseline(),
-            createHistory(),
-            List.of(),
-            0.15,
-            50,
-            "Normal"
-        );
-        when(mockService.getForecast("USD_KRW", 30)).thenReturn(empty);
+    @DisplayName("전망 동인은 그대로 옮긴다 (L2)")
+    void factors() {
+        when(service.getFactors("USDKRW")).thenReturn(new ForecastService.FactorsView("USDKRW"));
 
-        var response = controller.getForecast("USD_KRW", 30);
+        ApiResponse<FactorsResponse> response = controller.getFactors("USDKRW");
 
-        // 경로가 비어 있으면 상·하단 모두 현재 환율로 떨어지고 폭은 0 이다.
-        assertThat(response.data().path()).isEmpty();
-        assertEquals(1200.0, response.data().interval80().lo(), 1e-9);
-        assertEquals(1200.0, response.data().interval80().hi(), 1e-9);
-        assertEquals(0.0, response.data().interval80().widthPct(), 1e-9);
+        assertEquals("USDKRW", response.data().pairCode());
+        assertTrue(response.data().factors().isEmpty());
     }
 
     @Test
-    void testGetFactors_Success() {
-        when(mockService.getFactors("USD_KRW")).thenReturn(mockFactors);
+    @DisplayName("경제 일정은 그대로 옮긴다")
+    void events() {
+        when(service.getEvents()).thenReturn(List.of(new ForecastService.EconomicEventView(
+                LocalDate.of(2026, 9, 17), "FOMC", "USD", "high")));
 
-        var response = controller.getFactors("USD_KRW");
+        ApiResponse<EventsResponse> response = controller.getEvents();
 
-        assertNotNull(response);
-        assertThat(response.data().pairCode()).isEqualTo("USD_KRW");
-        assertThat(response.data().factors()).hasSize(3);
-        verify(mockService, times(1)).getFactors("USD_KRW");
+        assertEquals(1, response.data().events().size());
+        assertEquals("FOMC", response.data().events().get(0).title());
     }
 
-    @Test
-    void testGetModelPerformance_Success() {
-        when(mockService.getModelPerformance("USD_KRW", 30)).thenReturn(mockModelPerf);
-
-        var response = controller.getModelPerformance("USD_KRW", 30);
-
-        assertNotNull(response);
-        assertThat(response.data().pairCode()).isEqualTo("USD_KRW");
-        assertThat(response.data().horizonDays()).isEqualTo(30);
-        verify(mockService, times(1)).getModelPerformance("USD_KRW", 30);
+    private static ForecastService.ForecastView forecastView() {
+        return new ForecastService.ForecastView(
+                "USDKRW",
+                30,
+                BASE_DATE,
+                1382.40,
+                1382.40,
+                List.of(new ForecastService.HistoryPoint(LocalDate.of(2026, 8, 5), 1361.20)),
+                List.of(new ForecastService.BandPoint(
+                        BASE_DATE.plusDays(30), 1371.0, 1395.2, 1345.61, 1420.19)),
+                List.of(new ForecastService.ModelPathPoint(BASE_DATE.plusDays(30), 1382.40)),
+                new ForecastService.IntervalView(1345.61, 1420.19, 0.054),
+                new ForecastService.VolatilityView(0.061, 0.72, "elevated"),
+                new ForecastService.UserImpactView(157_900L, 15_790_000L),
+                new ForecastService.LabelsView("예측 범위 / 불확실성 구간", "모델의 참고 중심 경로"),
+                new ForecastService.ModelInfoView(List.of(0.50, 0.80), "가정", "한계"),
+                "불확실성 안내",
+                ForecastService.DISCLAIMER);
     }
 
-    @Test
-    void testGetEvents_Success() {
-        when(mockService.getEvents()).thenReturn(mockEvents);
-
-        var response = controller.getEvents();
-
-        assertNotNull(response);
-        assertThat(response.data().events()).hasSize(1);
-        verify(mockService, times(1)).getEvents();
-    }
-
-    private List<Double> createBaseline() {
-        List<Double> baseline = new ArrayList<>();
-        for (int i = 0; i <= 30; i++) {
-            baseline.add(1200.0);
-        }
-        return baseline;
-    }
-
-    private List<FxRateHistoryProvider.HistoryRateSnapshot> createHistory() {
-        List<FxRateHistoryProvider.HistoryRateSnapshot> history = new ArrayList<>();
-        for (int i = 0; i < 100; i++) {
-            history.add(new FxRateHistoryProvider.HistoryRateSnapshot(
-                LocalDate.now().minusDays(100 - i),
-                1200.0 + Math.sin(i * 0.05) * 10
-            ));
-        }
-        return history;
-    }
-
-    private List<ForecastService.ForecastData.PathPoint> createPathPoints() {
-        List<ForecastService.ForecastData.PathPoint> points = new ArrayList<>();
-        for (int i = 0; i <= 30; i++) {
-            points.add(new ForecastService.ForecastData.PathPoint(
-                "",
-                1180.0 + i * 0.5,
-                1220.0 + i * 0.5,
-                1150.0 + i * 0.5,
-                1250.0 + i * 0.5
-            ));
-        }
-        return points;
+    private static ForecastService.ModelPerformanceView performanceView() {
+        return new ForecastService.ModelPerformanceView(
+                "USDKRW",
+                90,
+                new ForecastService.ModelMetricsView(0.54, 0.019, 0.81, 0.058),
+                new ForecastService.RandomWalkMetricsView(0.54, 0.019),
+                0.0,
+                new ForecastService.ValidationView("rolling_walk_forward", 24, true),
+                ForecastService.PERFORMANCE_NOTE,
+                Instant.parse("2026-08-31T00:00:00Z"));
     }
 }

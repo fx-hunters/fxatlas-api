@@ -10,6 +10,7 @@ import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.domain.holding.entity.PurchaseFxRate;
 import com.divurve.domain.port.FxRateProvider;
 import com.divurve.domain.port.RateSnapshot;
+import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,7 +29,7 @@ class PurchaseFxRateResolverTest {
     private FxRateProvider fxRateProvider;
 
     private PurchaseFxRateResolver resolver() {
-        return new PurchaseFxRateResolver(fxRateProvider);
+        return new PurchaseFxRateResolver(fxRateProvider, new QuoteUnitNormalizer());
     }
 
     private final LocalDate purchasedAt = LocalDate.of(2025, 3, 10);
@@ -87,9 +88,10 @@ class PurchaseFxRateResolverTest {
 
         assertThatThrownBy(() -> resolver().resolve("USD", purchasedAt, null))
                 .isInstanceOfSatisfying(InvalidRequestException.class, ex -> {
-                    assertThat(ex.getCode()).isEqualTo(PurchaseFxRateResolver.ERROR_LOOKUP_FAILED);
-                    assertThat(ex.getField()).isEqualTo("purchase_fx_rate_krw");
-                    assertThat(ex.getDetail()).isEqualTo("boom");
+                    assertThat(ex.getCode()).isEqualTo("VALIDATION_FAILED");
+                    assertThat(ex.getField()).isEqualTo(PurchaseFxRateResolver.FIELD_PURCHASE_FX_RATE_KRW);
+                    // 외부 원문("boom")은 응답 메시지에 싣지 않는다.
+                    assertThat(ex.getMessage()).doesNotContain("boom");
                 });
     }
 }

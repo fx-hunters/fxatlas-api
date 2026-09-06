@@ -3,27 +3,30 @@ package com.divurve.api.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
-import com.divurve.api.dto.me.NotificationSettingsRequest;
-import com.divurve.api.dto.me.NotificationSettingsResponse;
 import com.divurve.api.dto.me.ProfileResponse;
 import com.divurve.api.dto.me.ProfileUpdateRequest;
+import com.divurve.api.dto.me.RiskProfileDetailRequest;
+import com.divurve.api.dto.me.RiskProfileDetailResponse;
 import com.divurve.api.dto.me.RiskProfileResponse;
-import com.divurve.api.dto.me.RiskProfileUpdateRequest;
+import com.divurve.api.dto.me.RiskProfileSimpleRequest;
 import com.divurve.api.dto.me.SettingsResponse;
 import com.divurve.api.dto.me.SettingsUpdateRequest;
 import com.divurve.common.response.ApiResponse;
-import com.divurve.domain.settings.NotificationSettingsService;
-import com.divurve.domain.settings.NotificationSettingsService.NotificationSettingsView;
+import com.divurve.domain.settings.NotificationSwitches;
 import com.divurve.domain.settings.RiskProfileService;
-import com.divurve.domain.settings.RiskProfileService.AnswerCommand;
+import com.divurve.domain.settings.RiskProfileService.DetailSubmission;
 import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.settings.SettingsView;
 import com.divurve.domain.settings.UserSettingsService;
 import com.divurve.domain.user.UserProfileService;
 import com.divurve.domain.user.UserProfileService.ProfileView;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -32,7 +35,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link MeController} 매핑 검증 — 도메인 뷰 → DTO 변환, data/meta 래핑, 요청 주체 해석(미인증 401).
+ * {@link MeController} 매핑 검증 — 도메인 뷰 → DTO 변환과 data/meta 래핑.
+ * v2 계약(진단 2분할·미측정 200·알림 흡수)을 컨트롤러 층에서 고정한다.
  */
 @ExtendWith(MockitoExtension.class)
 class MeControllerTest {
@@ -43,123 +47,195 @@ class MeControllerTest {
     private RiskProfileService riskProfileService;
     @Mock
     private UserSettingsService userSettingsService;
-    @Mock
-    private NotificationSettingsService notificationSettingsService;
 
     private final UUID userId = UUID.randomUUID();
 
     private MeController controller() {
-        return new MeController(userProfileService, riskProfileService, userSettingsService, notificationSettingsService);
+        return new MeController(userProfileService, riskProfileService, userSettingsService);
+    }
+
+    private RiskProfileView measuredView() {
+        return new RiskProfileView(
+                RiskProfileService.STATUS_SIMPLE_DONE,
+                "balanced",
+                "균형항로형",
+                4,
+                LocalDate.of(2026, 9, 1),
+                0.60,
+                new RiskProfileView.Simple(
+                        Map.of("q1", "B", "q2", "C", "q3", "B"),
+                        List.of(new RiskProfileView.Rationale("q1", "B", 1, "작은 손실은 받아들입니다.")),
+                        null),
+                new RiskProfileView.Detail(false, Map.of("q4", "B"), "q5", "지출 균형을 함께 고려하는"),
+                RiskProfileService.LIMITATION_NOTE);
+    }
+
+    private RiskProfileView notMeasuredView() {
+        return new RiskProfileView(
+                RiskProfileService.STATUS_NOT_MEASURED, null, null, null, null, null,
+                new RiskProfileView.Simple(Map.of(), List.of(), null),
+                new RiskProfileView.Detail(false, Map.of(), "q4", null),
+                RiskProfileService.LIMITATION_NOTE);
+    }
+
+    private SettingsView settingsView() {
+        return new SettingsView(
+                "081", 0.5, "standard", "finance", 0.0165, 0.00825,
+                false, true, true, true, false);
     }
 
     @Test
-    void getRiskProfile_은_현재_성향을_data_meta로_래핑한다() {
-        when(riskProfileService.getRiskProfile(userId)).thenReturn(
-                new RiskProfileView("balanced", 6, List.of(new RiskProfileView.Answer("Q1", 2))));
+    void 진단_조회는_명세_필드를_그대로_내려보낸다() {
+        when(riskProfileService.getRiskProfile(userId)).thenReturn(measuredView());
 
         ApiResponse<RiskProfileResponse> response = controller().getRiskProfile(userId);
 
         assertThat(response.meta()).isNotNull();
-        assertThat(response.data().riskType()).isEqualTo("balanced");
-        assertThat(response.data().score()).isEqualTo(6);
-        assertThat(response.data().answers()).singleElement()
-                .satisfies(a -> {
-                    assertThat(a.questionCode()).isEqualTo("Q1");
-                    assertThat(a.choice()).isEqualTo(2);
-                });
+        RiskProfileResponse body = response.data();
+        assertThat(body.status()).isEqualTo("simple_done");
+        assertThat(body.grade()).isEqualTo("balanced");
+        assertThat(body.gradeLabel()).isEqualTo("균형항로형");
+        assertThat(body.score()).isEqualTo(4);
+        assertThat(body.diagnosedOn()).isEqualTo(LocalDate.of(2026, 9, 1));
+        assertThat(body.concentrationThreshold()).isEqualTo(0.60);
+        assertThat(body.simple().answers()).containsEntry("q2", "C");
+        assertThat(body.simple().rationale()).singleElement().satisfies(r -> {
+            assertThat(r.question()).isEqualTo("q1");
+            assertThat(r.choice()).isEqualTo("B");
+            assertThat(r.points()).isEqualTo(1);
+        });
+        assertThat(body.simple().mixedResponseNote()).isNull();
+        assertThat(body.detail().nextQuestion()).isEqualTo("q5");
+        assertThat(body.detail().titleModifier()).isEqualTo("지출 균형을 함께 고려하는");
+        assertThat(body.limitationNote()).isEqualTo(RiskProfileService.LIMITATION_NOTE);
     }
 
     @Test
-    void updateRiskProfile_은_응답을_커맨드로_변환해_재진단한다() {
-        when(riskProfileService.reassess(eq(userId), any())).thenReturn(
-                new RiskProfileView("challenging", 9, List.of()));
+    void 미진단이면_404가_아니라_not_measured_를_200으로_내려보낸다() {
+        when(riskProfileService.getRiskProfile(userId)).thenReturn(notMeasuredView());
 
-        RiskProfileUpdateRequest request = new RiskProfileUpdateRequest(List.of(
-                new RiskProfileUpdateRequest.Answer("Q1", 3),
-                new RiskProfileUpdateRequest.Answer("Q2", 3)));
-        ApiResponse<RiskProfileResponse> response = controller().updateRiskProfile(userId, request);
+        RiskProfileResponse body = controller().getRiskProfile(userId).data();
 
-        assertThat(response.data().riskType()).isEqualTo("challenging");
+        assertThat(body.status()).isEqualTo("not_measured");
+        assertThat(body.grade()).isNull();
+        assertThat(body.gradeLabel()).isNull();
+        assertThat(body.score()).isNull();
+        assertThat(body.detail().nextQuestion()).isEqualTo("q4");
+    }
+
+    @Test
+    void 간편_진단_제출은_응답_맵을_그대로_넘긴다() {
+        when(riskProfileService.submitSimple(eq(userId), any())).thenReturn(measuredView());
+
+        ApiResponse<RiskProfileResponse> response = controller()
+                .submitSimple(userId, new RiskProfileSimpleRequest(Map.of("q1", "B", "q2", "C", "q3", "B")));
+
+        assertThat(response.data().grade()).isEqualTo("balanced");
 
         @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<AnswerCommand>> captor = ArgumentCaptor.forClass(List.class);
-        org.mockito.Mockito.verify(riskProfileService).reassess(eq(userId), captor.capture());
-        assertThat(captor.getValue()).extracting(AnswerCommand::choice).containsExactly(3, 3);
+        ArgumentCaptor<Map<String, String>> captor = ArgumentCaptor.forClass(Map.class);
+        verify(riskProfileService).submitSimple(eq(userId), captor.capture());
+        assertThat(captor.getValue()).containsEntry("q3", "B");
     }
 
     @Test
-    void updateRiskProfile_은_응답이_null이면_빈_목록으로_넘긴다() {
-        when(riskProfileService.reassess(eq(userId), any())).thenReturn(
-                new RiskProfileView("stable", 0, List.of()));
+    void 상세_진단_제출은_applied_블록을_함께_내려보낸다() {
+        when(riskProfileService.submitDetail(eq(userId), any()))
+                .thenReturn(new DetailSubmission(measuredView(), "standard", "finance"));
 
-        controller().updateRiskProfile(userId, new RiskProfileUpdateRequest(null));
+        ApiResponse<RiskProfileDetailResponse> response = controller()
+                .submitDetail(userId, new RiskProfileDetailRequest(Map.of("q4", "B", "q5", "standard")));
 
-        @SuppressWarnings("unchecked")
-        ArgumentCaptor<List<AnswerCommand>> captor = ArgumentCaptor.forClass(List.class);
-        org.mockito.Mockito.verify(riskProfileService).reassess(eq(userId), captor.capture());
-        assertThat(captor.getValue()).isEmpty();
+        RiskProfileDetailResponse body = response.data();
+        // 점수·유형은 상세 진단으로 바뀌지 않는다.
+        assertThat(body.grade()).isEqualTo("balanced");
+        assertThat(body.score()).isEqualTo(4);
+        assertThat(body.detail().nextQuestion()).isEqualTo("q5");
+        assertThat(body.applied().explainLevel()).isEqualTo("standard");
+        assertThat(body.applied().explainDomain()).isEqualTo("finance");
+        assertThat(body.applied().titleModifier()).isEqualTo("지출 균형을 함께 고려하는");
+        assertThat(body.limitationNote()).isEqualTo(RiskProfileService.LIMITATION_NOTE);
     }
 
     @Test
-    void getSettings_은_설정과_실효스프레드를_래핑한다() {
-        when(userSettingsService.getSettings(userId)).thenReturn(
-                new SettingsView("004", 0.8, "simple", "plain", 0.0175, 0.0035));
+    void 설정_조회는_알림_스위치까지_함께_내려보낸다() {
+        when(userSettingsService.getSettings(userId)).thenReturn(settingsView());
 
-        ApiResponse<SettingsResponse> response = controller().getSettings(userId);
+        SettingsResponse body = controller().getSettings(userId).data();
 
-        SettingsResponse body = response.data();
-        assertThat(body.defaultBankCode()).isEqualTo("004");
-        assertThat(body.fxDiscountRatio()).isEqualTo(0.8);
-        assertThat(body.explainLevel()).isEqualTo("simple");
-        assertThat(body.explainDomain()).isEqualTo("plain");
-        assertThat(body.baseSpreadRatio()).isEqualTo(0.0175);
-        assertThat(body.effectiveSpreadRatio()).isEqualTo(0.0035);
+        assertThat(body.defaultBankCode()).isEqualTo("081");
+        assertThat(body.fxDiscountRatio()).isEqualTo(0.5);
+        assertThat(body.explainLevel()).isEqualTo("standard");
+        assertThat(body.explainDomain()).isEqualTo("finance");
+        assertThat(body.baseSpreadRatio()).isEqualTo(0.0165);
+        assertThat(body.effectiveSpreadRatio()).isEqualTo(0.00825);
+        assertThat(body.notifyStepDue()).isFalse();
+        assertThat(body.notifyRegimeShift()).isTrue();
+        assertThat(body.notifyDeadlineNear()).isTrue();
+        assertThat(body.notifyTargetZone()).isTrue();
+        assertThat(body.notifyConcentration()).isFalse();
     }
 
     @Test
-    void updateSettings_은_요청값을_그대로_전달하고_결과를_래핑한다() {
-        when(userSettingsService.updateSettings(userId, "081", 0.5, "standard", "finance")).thenReturn(
-                new SettingsView("081", 0.5, "standard", "finance", 0.0165, 0.00825));
+    void 설정_수정은_알림_스위치를_도메인_커맨드로_넘긴다() {
+        when(userSettingsService.updateSettings(
+                eq(userId), eq("081"), eq(0.5), eq("standard"), eq("finance"), any(NotificationSwitches.class)))
+                .thenReturn(settingsView());
 
-        ApiResponse<SettingsResponse> response = controller()
-                .updateSettings(userId, new SettingsUpdateRequest("081", 0.5, "standard", "finance"));
+        ApiResponse<SettingsResponse> response = controller().updateSettings(
+                userId,
+                new SettingsUpdateRequest("081", 0.5, "standard", "finance", false, null, null, true, false));
 
         assertThat(response.data().effectiveSpreadRatio()).isEqualTo(0.00825);
+
+        ArgumentCaptor<NotificationSwitches> captor = ArgumentCaptor.forClass(NotificationSwitches.class);
+        verify(userSettingsService).updateSettings(
+                eq(userId), eq("081"), eq(0.5), eq("standard"), eq("finance"), captor.capture());
+        NotificationSwitches sent = captor.getValue();
+        assertThat(sent.notifyStepDue()).isFalse();
+        assertThat(sent.notifyRegimeShift()).isNull();   // 미변경은 null 로 전달된다
+        assertThat(sent.notifyDeadlineNear()).isNull();
+        assertThat(sent.notifyTargetZone()).isTrue();
+        assertThat(sent.notifyConcentration()).isFalse();
     }
 
     @Test
-    void getProfile_은_프로필을_래핑한다() {
+    void 계정_조회는_초기_설정_완료_여부를_함께_내려보낸다() {
+        Instant onboardedAt = Instant.parse("2026-09-01T15:30:00Z");
         when(userProfileService.getProfile(userId)).thenReturn(
-                new ProfileView(userId, "test@example.com", "테스트사용자", false));
+                new ProfileView(userId, "test@example.com", "테스트사용자", false, true, onboardedAt));
 
-        ApiResponse<ProfileResponse> response = controller().getProfile(userId);
+        ProfileResponse body = controller().getProfile(userId).data();
 
-        assertThat(response.data().email()).isEqualTo("test@example.com");
-        assertThat(response.data().name()).isEqualTo("테스트사용자");
-        assertThat(response.data().isDemo()).isFalse();
+        assertThat(body.userId()).isEqualTo(userId.toString());
+        assertThat(body.email()).isEqualTo("test@example.com");
+        assertThat(body.name()).isEqualTo("테스트사용자");
+        assertThat(body.isDemo()).isFalse();
+        assertThat(body.onboarded()).isTrue();
+        assertThat(body.onboardedAt()).isEqualTo(onboardedAt);
     }
 
     @Test
-    void updateProfile_은_이름을_수정하고_결과를_래핑한다() {
+    void 계정_수정은_이름을_바꾸고_결과를_래핑한다() {
         when(userProfileService.updateProfile(userId, "새이름")).thenReturn(
-                new ProfileView(userId, "test@example.com", "새이름", false));
+                new ProfileView(userId, "test@example.com", "새이름", false, false, null));
 
-        ApiResponse<ProfileResponse> response = controller().updateProfile(userId, new ProfileUpdateRequest("새이름"));
+        ProfileResponse body = controller().updateProfile(userId, new ProfileUpdateRequest("새이름")).data();
 
-        assertThat(response.data().name()).isEqualTo("새이름");
+        assertThat(body.name()).isEqualTo("새이름");
+        assertThat(body.onboarded()).isFalse();
+        assertThat(body.onboardedAt()).isNull();
     }
 
     @Test
-    void updateNotifications_은_알림설정을_갱신하고_결과를_래핑한다() {
-        when(notificationSettingsService.updateNotifications(userId, true, false, true, false))
-                .thenReturn(new NotificationSettingsView(true, false, true, false));
+    void 초기_설정_종료는_onboarded_를_true_로_바꿔_돌려준다() {
+        Instant now = Instant.parse("2026-09-07T00:00:00Z");
+        when(userProfileService.completeOnboarding(userId)).thenReturn(
+                new ProfileView(userId, "test@example.com", "테스트사용자", false, true, now));
 
-        NotificationSettingsRequest request = new NotificationSettingsRequest(true, false, true, false);
-        ApiResponse<NotificationSettingsResponse> response = controller().updateNotifications(userId, request);
+        ProfileResponse body = controller().completeOnboarding(userId).data();
 
-        assertThat(response.data().exchangeScheduleReminder()).isTrue();
-        assertThat(response.data().reviewRequiredAlert()).isFalse();
-        assertThat(response.data().deadlineApproachAlert()).isTrue();
-        assertThat(response.data().bucketEntryAlert()).isFalse();
+        assertThat(body.onboarded()).isTrue();
+        assertThat(body.onboardedAt()).isEqualTo(now);
     }
 }

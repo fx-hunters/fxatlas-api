@@ -5,9 +5,11 @@ import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.domain.holding.entity.PurchaseFxRate;
 import com.divurve.domain.port.FxRateProvider;
 import com.divurve.domain.port.RateSnapshot;
+import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
 import java.time.LocalDate;
-import java.util.Set;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 
 /**
  * 매입 시점 원화 환율을 해석한다 (FR-ON-04).
@@ -18,7 +20,7 @@ import java.util.Set;
  *   <li>{@code purchasedAt == null} → 환율 컨텍스트 없음.</li>
  *   <li>클라이언트가 폴백 값을 넘겼으면 그대로 {@code source="manual"} 로 기록한다.</li>
  *   <li>그 외에는 {@link FxRateProvider}(예: ECOS)로 조회. 실패 시 {@link InvalidRequestException}
- *       ({@code code=FX_RATE_LOOKUP_FAILED})으로 표면화해 프론트가 수동 입력 UI 로 유도하게 한다.</li>
+ *       (400 {@code VALIDATION_FAILED})으로 표면화해 프론트가 수동 입력 UI 로 유도하게 한다.</li>
  * </ul>
  *
  * <p>참고: 현재 {@link FxRateProvider} 는 최신 종가만 제공하므로 매입일이 과거여도 최신 종가를 채운다.
@@ -27,20 +29,26 @@ import java.util.Set;
 @UseCase
 public class PurchaseFxRateResolver {
 
+    private static final Logger log = LoggerFactory.getLogger(PurchaseFxRateResolver.class);
+
     /** 원화 자산은 환율 근거가 필요 없다. */
     public static final String KRW = "KRW";
     /** 수동 입력임을 표기할 때 사용하는 출처 식별자. */
     public static final String SOURCE_MANUAL = "manual";
-    /** 자동조회 실패를 프론트가 특정 UI 로 처리할 수 있도록 하는 에러 코드 (FR-ON-04). */
-    public static final String ERROR_LOOKUP_FAILED = "FX_RATE_LOOKUP_FAILED";
-
-    /** 100 단위 환산이 필요한 통화(ECOS 는 원/100엔 등으로 응답). */
-    private static final Set<String> PER_HUNDRED_UNITS = Set.of("JPY");
+    /**
+     * 자동조회 실패를 프론트가 수동 입력 UI 로 유도할 수 있게 알려주는 에러 필드명 (FR-ON-04).
+     * 에러코드는 명세 §1.3 의 6종 닫힌 집합을 지켜 {@code VALIDATION_FAILED} 하나이므로,
+     * 어떤 입력을 채워야 하는지는 {@code field} 로 구분한다.
+     */
+    public static final String FIELD_PURCHASE_FX_RATE_KRW = "purchase_fx_rate_krw";
 
     private final FxRateProvider fxRateProvider;
+    private final QuoteUnitNormalizer quoteUnitNormalizer;
 
-    public PurchaseFxRateResolver(FxRateProvider fxRateProvider) {
+    public PurchaseFxRateResolver(
+            FxRateProvider fxRateProvider, QuoteUnitNormalizer quoteUnitNormalizer) {
         this.fxRateProvider = fxRateProvider;
+        this.quoteUnitNormalizer = quoteUnitNormalizer;
     }
 
     /**
@@ -49,7 +57,8 @@ public class PurchaseFxRateResolver {
      * @param currencyCode  자산 통화 (KRW 이면 무조건 {@code null})
      * @param purchasedAt   매입일 ({@code null} 이면 자동/수동 모두 스킵)
      * @param fallbackKrw   자동 조회 실패 시 클라이언트가 넘긴 수동 입력값 (선택)
-     * @throws InvalidRequestException 조회 실패했고 폴백도 없을 때(HTTP 400, {@link #ERROR_LOOKUP_FAILED})
+     * @throws InvalidRequestException 조회 실패했고 폴백도 없을 때
+     *                                (HTTP 400 {@code VALIDATION_FAILED}, field {@link #FIELD_PURCHASE_FX_RATE_KRW})
      */
     public PurchaseFxRate resolve(String currencyCode, LocalDate purchasedAt, BigDecimal fallbackKrw) {
         if (purchasedAt == null || KRW.equalsIgnoreCase(currencyCode)) {
@@ -61,21 +70,14 @@ public class PurchaseFxRateResolver {
         String pairCode = currencyCode.toUpperCase() + "_" + KRW;
         try {
             RateSnapshot snapshot = fxRateProvider.fetchLatest(pairCode);
-            return new PurchaseFxRate(normalize(currencyCode, snapshot.rate()), snapshot.source(), snapshot.asOf());
+            BigDecimal perUnitRate = quoteUnitNormalizer.toPerUnitRate(currencyCode, snapshot.rate());
+            return new PurchaseFxRate(perUnitRate, snapshot.source(), snapshot.asOf());
         } catch (RuntimeException ex) {
+            // 외부(ECOS) 원문 메시지에는 엔드포인트 URL·API 키가 실릴 수 있어 응답에 넘기지 않고 로그로만 남긴다.
+            log.warn("매입 환율 자동조회 실패: pair={}", pairCode, ex);
             throw new InvalidRequestException(
-                    ERROR_LOOKUP_FAILED,
                     "매입 환율 자동조회에 실패했습니다. purchase_fx_rate_krw 를 직접 입력해주세요.",
-                    "purchase_fx_rate_krw",
-                    ex.getMessage());
+                    FIELD_PURCHASE_FX_RATE_KRW);
         }
-    }
-
-    /** ECOS 는 JPY 를 원/100엔으로 응답하므로 1단위 환율로 정규화한다. */
-    private BigDecimal normalize(String currencyCode, BigDecimal raw) {
-        if (PER_HUNDRED_UNITS.contains(currencyCode.toUpperCase())) {
-            return raw.divide(new BigDecimal("100"));
-        }
-        return raw;
     }
 }

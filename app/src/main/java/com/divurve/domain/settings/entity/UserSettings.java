@@ -20,8 +20,10 @@ import org.hibernate.generator.EventType;
  * {@code explain_level}(설명 선호 3단계)·{@code explain_domain}(익숙한 설명 분야)은 문구·비유·설명 밀도에만 쓰고
  * 금액·위험 판정 계산에는 절대 들어가지 않는다(FR-MY-03).
  * {@code default_bank_code}·{@code fx_discount_ratio}(주거래 은행·환전 우대율)는 실효 스프레드 계산의 입력이다(FR-MY-04).
- * 알림 4종({@code exchange_schedule_reminder}·{@code review_required_alert}·{@code deadline_approach_alert}·{@code bucket_entry_alert})은
- * 모두 boolean 타입으로 기본값은 true(활성화)다(FR-MY-05, FR-MY-06).
+ * 알림 스위치 5종({@code notify_step_due}·{@code notify_regime_shift}·{@code notify_deadline_near}·
+ * {@code notify_target_zone}·{@code notify_concentration})은 ERD v3.0 {@code user_settings} 그대로이며,
+ * {@code notify_target_zone} 만 기본값 false 다(FR-MY-05, FR-MY-06). 명세 §3 마이페이지 표에 따라
+ * {@code GET/PUT /me/settings} 가 설명 선호와 함께 다룬다.
  */
 @Entity
 @Table(name = "user_settings")
@@ -48,17 +50,25 @@ public class UserSettings {
     @Column(name = "explain_domain", nullable = false)
     private String explainDomain;
 
-    @Column(name = "exchange_schedule_reminder", nullable = false)
-    private boolean exchangeScheduleReminder = true;
+    /** 회차 집행 예정 알림. */
+    @Column(name = "notify_step_due", nullable = false)
+    private boolean notifyStepDue = true;
 
-    @Column(name = "review_required_alert", nullable = false)
-    private boolean reviewRequiredAlert = true;
+    /** 시장 국면 전환 알림. */
+    @Column(name = "notify_regime_shift", nullable = false)
+    private boolean notifyRegimeShift = true;
 
-    @Column(name = "deadline_approach_alert", nullable = false)
-    private boolean deadlineApproachAlert = true;
+    /** 마감 임박 알림. */
+    @Column(name = "notify_deadline_near", nullable = false)
+    private boolean notifyDeadlineNear = true;
 
-    @Column(name = "bucket_entry_alert", nullable = false)
-    private boolean bucketEntryAlert = true;
+    /** 목표 구간 진입 알림. ERD 기본값만 false 다. */
+    @Column(name = "notify_target_zone", nullable = false)
+    private boolean notifyTargetZone = false;
+
+    /** 집중도 경고 알림. */
+    @Column(name = "notify_concentration", nullable = false)
+    private boolean notifyConcentration = true;
 
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
@@ -75,10 +85,11 @@ public class UserSettings {
         this.fxDiscountRatio = fxDiscountRatio;
         this.explainLevel = explainLevel;
         this.explainDomain = explainDomain;
-        this.exchangeScheduleReminder = true;
-        this.reviewRequiredAlert = true;
-        this.deadlineApproachAlert = true;
-        this.bucketEntryAlert = true;
+        this.notifyStepDue = true;
+        this.notifyRegimeShift = true;
+        this.notifyDeadlineNear = true;
+        this.notifyTargetZone = false;
+        this.notifyConcentration = true;
     }
 
     /** 새 설정을 만든다. id/created_at 은 저장 시점에 DB 가 채운다. */
@@ -95,14 +106,18 @@ public class UserSettings {
         this.explainDomain = explainDomain;
     }
 
-    /** 알림 설정을 갱신한다. */
+    /** 알림 스위치 5종을 갱신한다 (ERD user_settings). */
     public void updateNotifications(
-            boolean exchangeScheduleReminder, boolean reviewRequiredAlert,
-            boolean deadlineApproachAlert, boolean bucketEntryAlert) {
-        this.exchangeScheduleReminder = exchangeScheduleReminder;
-        this.reviewRequiredAlert = reviewRequiredAlert;
-        this.deadlineApproachAlert = deadlineApproachAlert;
-        this.bucketEntryAlert = bucketEntryAlert;
+            boolean notifyStepDue,
+            boolean notifyRegimeShift,
+            boolean notifyDeadlineNear,
+            boolean notifyTargetZone,
+            boolean notifyConcentration) {
+        this.notifyStepDue = notifyStepDue;
+        this.notifyRegimeShift = notifyRegimeShift;
+        this.notifyDeadlineNear = notifyDeadlineNear;
+        this.notifyTargetZone = notifyTargetZone;
+        this.notifyConcentration = notifyConcentration;
     }
 
     public UUID getId() {
@@ -133,19 +148,23 @@ public class UserSettings {
         return createdAt;
     }
 
-    public boolean isExchangeScheduleReminder() {
-        return exchangeScheduleReminder;
+    public boolean isNotifyStepDue() {
+        return notifyStepDue;
     }
 
-    public boolean isReviewRequiredAlert() {
-        return reviewRequiredAlert;
+    public boolean isNotifyRegimeShift() {
+        return notifyRegimeShift;
     }
 
-    public boolean isDeadlineApproachAlert() {
-        return deadlineApproachAlert;
+    public boolean isNotifyDeadlineNear() {
+        return notifyDeadlineNear;
     }
 
-    public boolean isBucketEntryAlert() {
-        return bucketEntryAlert;
+    public boolean isNotifyTargetZone() {
+        return notifyTargetZone;
+    }
+
+    public boolean isNotifyConcentration() {
+        return notifyConcentration;
     }
 }

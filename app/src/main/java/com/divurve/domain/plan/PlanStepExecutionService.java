@@ -9,8 +9,16 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 계획 회차 실행(완료/건너뛰기) 서비스.
+ * 계획 회차 실행(완료/건너뛰기) 서비스 — <b>우선순위 P(구조만 준비)</b>.
  * 회차 상태를 업데이트하고, 건너뛰기 시 남은 회차에 부담을 재분배한다.
+ *
+ * <p><b>요구사항 v2 §4.12 미확정</b> — 회차 분할·재분배가 전제하는 값(권장 분할 회차, 달성 확률
+ * 정의, 안전/기회 버킷)은 전부 미확정이며 기존 문서의 4~8회 등은 <b>후보일 뿐 확정 요구사항이
+ * 아니다</b>. 확정 전까지 이 서비스는 {@code RouteFeatureFlag} 뒤에 있어 호출되지 않는다
+ * (호출자인 {@code PlanController} 가 501 로 막는다).
+ *
+ * <p>v1 안전모드(연속 건너뛰기 3회 → 계획 재생성) 판정은 제거했다. 기능 자체가 v2 에서 삭제됐고
+ * 임계치 3 도 §4.12 의 미확정 값이었다. 연속 건너뛰기 <b>카운트</b>는 사실 기록이므로 남긴다.
  */
 @UseCase
 public class PlanStepExecutionService {
@@ -98,14 +106,12 @@ public class PlanStepExecutionService {
                 remainingAmount, remainingSteps, burdenBefore) * 100.0;
 
         int consecutiveSkips = countConsecutiveSkips(allSteps, seq);
-        boolean safeModeTriggered = PlanCalculator.shouldTriggerSafeMode(consecutiveSkips);
 
         return new SkipResult(
                 consecutiveSkips,
                 burdenBefore,
                 burdenAfter,
                 burdenIncreasePct,
-                safeModeTriggered,
                 remainingAmount,
                 remainingSteps);
     }
@@ -131,14 +137,13 @@ public class PlanStepExecutionService {
     }
 
     /**
-     * 건너뛰기 결과.
+     * 건너뛰기 결과. v1 의 {@code safeModeTriggered} 는 안전모드 삭제와 함께 제거했다.
      */
     public record SkipResult(
             int consecutiveSkips,
             double burdenBefore,
             double burdenAfter,
             double burdenIncreasePct,
-            boolean safeModeTriggered,
             double remainingAmount,
             int remainingSteps) {
     }

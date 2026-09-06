@@ -22,7 +22,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link UserSettingsService} 단위 테스트 — 조회(기본값 포함)·부분 수정·실효 스프레드 계산·설명 프로필 검증.
+ * {@link UserSettingsService} 단위 테스트 — 조회(기본값 포함)·부분 수정·실효 스프레드 계산·설명 프로필 검증과
+ * <b>알림 스위치 5종</b>(v1 {@code PUT /me/notifications} 를 흡수한 부분).
  * 스프레드 계산은 실제 engine({@link EffectiveSpreadCalculator})으로 검증한다.
  */
 @ExtendWith(MockitoExtension.class)
@@ -65,6 +66,12 @@ class UserSettingsServiceTest {
         assertThat(view.explainLevel()).isEqualTo(UserSettingsService.DEFAULT_EXPLAIN_LEVEL);
         assertThat(view.explainDomain()).isEqualTo(UserSettingsService.DEFAULT_EXPLAIN_DOMAIN);
         assertThat(view.effectiveSpreadRatio()).isEqualTo(BankSpreadTable.DEFAULT_BASE_SPREAD_RATIO, within(1e-9));
+        // ERD 기본값 — notify_target_zone 만 false.
+        assertThat(view.notifyStepDue()).isTrue();
+        assertThat(view.notifyRegimeShift()).isTrue();
+        assertThat(view.notifyDeadlineNear()).isTrue();
+        assertThat(view.notifyTargetZone()).isFalse();
+        assertThat(view.notifyConcentration()).isTrue();
     }
 
     @Test
@@ -161,6 +168,76 @@ class UserSettingsServiceTest {
         assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, null, "cooking"))
                 .isInstanceOf(InvalidRequestException.class);
         verify(userSettingsRepository, never()).save(any());
+    }
+
+    // --- 알림 스위치 (v1 PUT /me/notifications 흡수) ------------------------------------------------
+
+    @Test
+    void updateSettings_은_알림_스위치를_부분_수정한다() {
+        UserSettings existing = UserSettings.create(user, "081", 0.5, "standard", "dev");
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(existing));
+        when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SettingsView view = service().updateSettings(
+                userId, null, null, null, null,
+                new NotificationSwitches(false, null, null, true, null));
+
+        assertThat(view.notifyStepDue()).isFalse();      // 요청값
+        assertThat(view.notifyTargetZone()).isTrue();    // 요청값
+        assertThat(view.notifyRegimeShift()).isTrue();   // 기존값 유지
+        assertThat(view.notifyDeadlineNear()).isTrue();  // 기존값 유지
+        assertThat(view.notifyConcentration()).isTrue(); // 기존값 유지
+        assertThat(existing.isNotifyStepDue()).isFalse();
+    }
+
+    @Test
+    void updateSettings_은_최초설정에서_생략한_알림은_ERD_기본값을_쓴다() {
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SettingsView view = service().updateSettings(
+                userId, null, null, null, null,
+                new NotificationSwitches(null, null, null, null, false));
+
+        assertThat(view.notifyStepDue()).isTrue();
+        assertThat(view.notifyRegimeShift()).isTrue();
+        assertThat(view.notifyDeadlineNear()).isTrue();
+        assertThat(view.notifyTargetZone()).isFalse();
+        assertThat(view.notifyConcentration()).isFalse(); // 요청값
+    }
+
+    @Test
+    void updateSettings_은_알림_요청이_null_이면_기존_스위치를_그대로_둔다() {
+        UserSettings existing = UserSettings.create(user, "081", 0.5, "standard", "dev");
+        existing.updateNotifications(false, false, false, true, false);
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(existing));
+        when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SettingsView view = service().updateSettings(userId, null, null, "detailed", null, null);
+
+        assertThat(view.explainLevel()).isEqualTo("detailed");
+        assertThat(view.notifyStepDue()).isFalse();
+        assertThat(view.notifyRegimeShift()).isFalse();
+        assertThat(view.notifyDeadlineNear()).isFalse();
+        assertThat(view.notifyTargetZone()).isTrue();
+        assertThat(view.notifyConcentration()).isFalse();
+    }
+
+    @Test
+    void 설명프로필만_바꾸는_오버로드는_알림을_건드리지_않는다() {
+        UserSettings existing = UserSettings.create(user, "081", 0.5, "simple", "plain");
+        existing.updateNotifications(true, false, true, true, false);
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(existing));
+        when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        SettingsView view = service().updateSettings(userId, null, null, "standard", "finance");
+
+        assertThat(view.explainLevel()).isEqualTo("standard");
+        assertThat(view.explainDomain()).isEqualTo("finance");
+        assertThat(view.notifyRegimeShift()).isFalse();
+        assertThat(view.notifyTargetZone()).isTrue();
+        assertThat(view.notifyConcentration()).isFalse();
     }
 
     @Test

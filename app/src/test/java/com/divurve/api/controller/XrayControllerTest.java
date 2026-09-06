@@ -5,22 +5,22 @@ import static org.assertj.core.api.Assertions.entry;
 import static org.mockito.Mockito.when;
 
 import com.divurve.api.dto.xray.AttributionResponse;
-import com.divurve.api.dto.xray.StressRequest;
-import com.divurve.api.dto.xray.StressResponse;
 import com.divurve.api.dto.xray.XrayResponse;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.xray.XrayService;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link XrayController} — 도메인 경계 record → 응답 DTO 변환, data/meta 래핑 검증.
- * 컨트롤러는 engine 타입을 직접 만지지 않고 {@link XrayService} 가 준 값만 옮긴다.
+ * {@link XrayController} — 도메인 경계 record → 응답 DTO 변환, data/meta 래핑 (명세 §5.3 · §5.4).
+ * 컨트롤러는 계산하지 않는다 — 1퍼센트 민감도 계산도 engine 으로 옮겼다(CLAUDE.md §1).
  */
 @ExtendWith(MockitoExtension.class)
 class XrayControllerTest {
@@ -35,101 +35,120 @@ class XrayControllerTest {
     }
 
     @Test
-    void getXray_는_통화별_노출과_1퍼센트_민감도를_계산해_data_meta_로_감싼다() {
+    @DisplayName("명세 §5.3 — 원화 자산·외화 비중·집중도·민감도를 data/meta 로 감싼다")
+    void getXray_는_명세_5_3_모양으로_감싼다() {
         Map<String, Long> assets = new LinkedHashMap<>();
-        assets.put("USD", 3_250_000L);
-        assets.put("JPY", 45_000L);
+        assets.put("USD", 15_790_000L);
+        assets.put("JPY", 5_470_000L);
         Map<String, Double> exposure = new LinkedHashMap<>();
-        exposure.put("USD", 0.6922);
-        // JPY 비중이 빠져 있으면 0.0 으로 채운다.
+        exposure.put("USD", 0.6388);
+        // 비중이 빠져 있으면 0.0 으로 채운다.
+        Map<String, Long> sensitivity = new LinkedHashMap<>();
+        sensitivity.put("USD", 157_900L);
+        sensitivity.put("JPY", 54_700L);
+
         when(xrayService.getPortfolio(userId)).thenReturn(new XrayService.PortfolioSnapshot(
-                userId, 4_695_000L, 4_695_000L, 1.0, assets, exposure, "USD", 0.6922, 0.35, "warning"));
+                68_400_000L, 43_680_000L, 24_720_000L, 0.3614, assets, exposure,
+                new XrayService.ConcentrationView(
+                        "USD", 0.6388, 0.60, "risk_profile.balanced", "above_threshold", 0.0388),
+                new XrayService.SensitivityView(247_200L, sensitivity),
+                null));
 
         ApiResponse<XrayResponse> response = controller().getXray(userId);
 
         assertThat(response.meta()).isNotNull();
         XrayResponse data = response.data();
-        assertThat(data.totalAssetKrw()).isEqualTo(4_695_000L);
-        assertThat(data.fxAssetKrw()).isEqualTo(4_695_000L);
-        assertThat(data.fxRatio()).isEqualTo(1.0);
+        assertThat(data.totalAssetKrw()).isEqualTo(68_400_000L);
+        assertThat(data.krwAssetKrw()).isEqualTo(43_680_000L);
+        assertThat(data.fxAssetKrw()).isEqualTo(24_720_000L);
+        assertThat(data.fxRatio()).isEqualTo(0.3614);
         assertThat(data.exposure()).containsExactly(
-                new XrayResponse.Exposure("USD", 3_250_000L, 0.6922),
-                new XrayResponse.Exposure("JPY", 45_000L, 0.0));
-        assertThat(data.concentration())
-                .isEqualTo(new XrayResponse.Concentration("USD", 0.6922, 0.35, "warning"));
-        // 1% 민감도: USD 32,500 + JPY 450 = 32,950
-        assertThat(data.sensitivity1pct().totalKrw()).isEqualTo(32_950L);
+                new XrayResponse.Exposure("USD", 15_790_000L, 0.6388),
+                new XrayResponse.Exposure("JPY", 5_470_000L, 0.0));
+        assertThat(data.concentration()).isEqualTo(new XrayResponse.Concentration(
+                "USD", 0.6388, 0.60, "risk_profile.balanced", "above_threshold"));
+        assertThat(data.sensitivity1pct().totalKrw()).isEqualTo(247_200L);
         assertThat(data.sensitivity1pct().byCurrency())
-                .containsOnly(entry("USD", 32_500L), entry("JPY", 450L));
-        assertThat(data.dayChangeKrw()).isZero();
-        assertThat(data.upcomingOutflows()).isEmpty();
+                .containsExactly(entry("USD", 157_900L), entry("JPY", 54_700L));
+        assertThat(data.dayChangeKrw()).isNull();
     }
 
     @Test
-    void getAttribution_은_three_way_이면_교차항까지_네_구성요소를_담는다() {
-        when(xrayService.getAttribution(userId, "USD", "three_way")).thenReturn(analysis("three_way"));
+    @DisplayName("성향 미측정이면 threshold·threshold_source 가 null 로 내려간다")
+    void 성향_미측정이면_null_이_내려간다() {
+        when(xrayService.getPortfolio(userId)).thenReturn(new XrayService.PortfolioSnapshot(
+                0L, 0L, 0L, 0.0, Map.of(), Map.of(),
+                new XrayService.ConcentrationView(null, null, null, null, "unknown", null),
+                new XrayService.SensitivityView(0L, Map.of()),
+                null));
 
-        ApiResponse<AttributionResponse> response = controller().getAttribution(userId, "USD", "three_way");
+        XrayResponse data = controller().getXray(userId).data();
 
+        assertThat(data.exposure()).isEmpty();
+        assertThat(data.concentration().topCurrencyCode()).isNull();
+        assertThat(data.concentration().share()).isNull();
+        assertThat(data.concentration().threshold()).isNull();
+        assertThat(data.concentration().thresholdSource()).isNull();
+        assertThat(data.concentration().status()).isEqualTo("unknown");
+    }
+
+    @Test
+    @DisplayName("명세 §5.4 — 네 항이 label 과 함께 asset·fx·interaction·cost 순서로 고정된다")
+    void getAttribution_는_네항을_고정_순서로_낸다() {
+        when(xrayService.getAttribution(userId, "USD")).thenReturn(
+                new XrayService.AttributionAnalysis(
+                        "USD", 15_050_000L, 15_790_000L, 0.0492,
+                        List.of(
+                                new XrayService.AttributionComponent("asset", 1_241_307L, 0.0825),
+                                new XrayService.AttributionComponent("fx", -421_400L, -0.0280),
+                                new XrayService.AttributionComponent("interaction", -34_757L, -0.0023),
+                                new XrayService.AttributionComponent("cost", -45_150L, -0.0030)),
+                        List.of(new XrayService.HoldingAttribution(
+                                "VOO", 11_240_000L, 0.091, -0.030, 0.0583))));
+
+        ApiResponse<AttributionResponse> response = controller().getAttribution(userId, "USD");
         AttributionResponse data = response.data();
+
         assertThat(response.meta()).isNotNull();
         assertThat(data.currencyCode()).isEqualTo("USD");
-        assertThat(data.mode()).isEqualTo("three_way");
-        assertThat(data.costBasisKrw()).isEqualTo(1_300_000L);
-        assertThat(data.currentKrw()).isEqualTo(1_430_000L);
-        assertThat(data.totalReturn()).isEqualTo(0.1);
-        // 비율은 퍼센트 포인트로 변환된다 (× 100).
-        assertThat(data.components()).containsExactly(
-                new AttributionResponse.Component("asset", 50_000L, 4.0),
-                new AttributionResponse.Component("fx", 90_000L, 6.0),
-                new AttributionResponse.Component("cost", -10_000L, -1.0),
-                new AttributionResponse.Component("interaction", 5_000L, 0.5));
-        assertThat(data.byHolding()).isEmpty();
-    }
+        assertThat(data.costBasisKrw()).isEqualTo(15_050_000L);
+        assertThat(data.currentKrw()).isEqualTo(15_790_000L);
+        assertThat(data.totalReturn()).isEqualTo(0.0492);
 
-    @Test
-    void getAttribution_은_shapley_이면_교차항을_따로_내보내지_않고_통화가_없으면_ALL_로_표기한다() {
-        when(xrayService.getAttribution(userId, null, "shapley")).thenReturn(analysis("shapley"));
-
-        AttributionResponse data = controller().getAttribution(userId, null, "shapley").data();
-
-        assertThat(data.currencyCode()).isEqualTo("ALL");
-        assertThat(data.mode()).isEqualTo("shapley");
         assertThat(data.components()).extracting(AttributionResponse.Component::key)
-                .containsExactly("asset", "fx", "cost");
+                .containsExactly("asset", "fx", "interaction", "cost");
+        assertThat(data.components()).extracting(AttributionResponse.Component::label)
+                .containsExactly("자산 가격 효과", "환율 효과", "상호작용", "비용");
+        assertThat(data.components()).extracting(AttributionResponse.Component::krw)
+                .containsExactly(1_241_307L, -421_400L, -34_757L, -45_150L);
+        // 검산: 네 항의 합 = current − cost_basis = 740,000
+        assertThat(data.components().stream()
+                .mapToLong(AttributionResponse.Component::krw).sum())
+                .isEqualTo(740_000L);
+        // contribution_pp 는 퍼센트(×100)가 아니라 0~1 비율이다 (명세 §1.4)
+        assertThat(data.components().get(0).contributionPp()).isEqualTo(0.0825);
+
+        assertThat(data.byHolding()).containsExactly(new AttributionResponse.ByHolding(
+                "VOO", 11_240_000L, 0.091, -0.030, 0.0583));
     }
 
     @Test
-    void applyStress_는_통화별_영향도를_리스트로_변환한다() {
-        Map<String, XrayService.CurrencyStressImpactData> byCurrency = new LinkedHashMap<>();
-        byCurrency.put("USD", new XrayService.CurrencyStressImpactData("USD", 0.1, 130_000L));
-        byCurrency.put("JPY", new XrayService.CurrencyStressImpactData("JPY", -0.05, -9_000L));
-        StressRequest request = new StressRequest(Map.of("USD", 0.1, "JPY", -0.05));
-        when(xrayService.applyStress(userId, request.shocks())).thenReturn(new XrayService.StressAnalysis(
-                1_480_000L, 1_601_000L, 121_000L, 0.08175675675675675, byCurrency));
+    @DisplayName("통화 필터를 생략하면 서비스에 null 이 전달되고 currency_code 도 null 이다")
+    void 통화_필터_생략() {
+        when(xrayService.getAttribution(userId, null)).thenReturn(
+                new XrayService.AttributionAnalysis(
+                        null, 1_000_000L, 1_000_000L, 0.0,
+                        List.of(
+                                new XrayService.AttributionComponent("asset", 0L, 0.0),
+                                new XrayService.AttributionComponent("fx", 0L, 0.0),
+                                new XrayService.AttributionComponent("interaction", 0L, 0.0),
+                                new XrayService.AttributionComponent("cost", 0L, 0.0)),
+                        List.of()));
 
-        ApiResponse<StressResponse> response = controller().applyStress(userId, request);
+        AttributionResponse data = controller().getAttribution(userId, null).data();
 
-        assertThat(response.meta()).isNotNull();
-        StressResponse data = response.data();
-        assertThat(data.totalAssetBeforeKrw()).isEqualTo(1_480_000L);
-        assertThat(data.totalAssetAfterKrw()).isEqualTo(1_601_000L);
-        assertThat(data.impactKrw()).isEqualTo(121_000L);
-        assertThat(data.impactRatio()).isEqualTo(0.08175675675675675);
-        assertThat(data.byCurrency()).containsExactly(
-                new StressResponse.ByCurrency("USD", 0.1, 130_000L),
-                new StressResponse.ByCurrency("JPY", -0.05, -9_000L));
-    }
-
-    private static XrayService.AttributionAnalysis analysis(String mode) {
-        return new XrayService.AttributionAnalysis(
-                1_300_000L,
-                1_430_000L,
-                0.1,
-                new XrayService.AttributionComponentData("asset", 0.04, 50_000L),
-                new XrayService.AttributionComponentData("fx", 0.06, 90_000L),
-                new XrayService.AttributionComponentData("interaction", 0.005, 5_000L),
-                new XrayService.AttributionComponentData("cost", -0.01, -10_000L),
-                mode);
+        assertThat(data.currencyCode()).isNull();
+        assertThat(data.byHolding()).isEmpty();
+        assertThat(data.components()).hasSize(4);
     }
 }

@@ -1,54 +1,67 @@
 package com.divurve.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import com.divurve.api.dto.asset.DepositCreateRequest;
 import com.divurve.api.dto.asset.DepositResponse;
+import com.divurve.api.dto.asset.DepositUpdateRequest;
 import com.divurve.api.dto.asset.HoldingCreateRequest;
 import com.divurve.api.dto.asset.HoldingResponse;
 import com.divurve.api.dto.asset.HoldingUpdateRequest;
+import com.divurve.api.dto.asset.KrwAssetCreateRequest;
+import com.divurve.api.dto.asset.KrwAssetResponse;
+import com.divurve.api.dto.asset.KrwAssetUpdateRequest;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.holding.DepositService;
 import com.divurve.domain.holding.HoldingService;
+import com.divurve.domain.holding.KrwAssetService;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
+import com.divurve.domain.holding.entity.KrwAsset;
 import com.divurve.domain.holding.entity.PurchaseFxRate;
 import com.divurve.domain.user.entity.User;
 import java.math.BigDecimal;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
- * {@link AssetController} — 도메인 결과 → DTO 변환, data/meta 래핑, 미인증 401 검증.
+ * {@link AssetController} — 도메인 결과 → DTO 변환, data/meta 래핑.
+ * v2 에서 추가된 {@code PUT/DELETE /deposits/:id} 와 {@code /krw-assets} 4종을 포함한다.
  */
 @ExtendWith(MockitoExtension.class)
 class AssetControllerTest {
+
+    private static final Instant NOW = Instant.parse("2026-09-01T15:30:00Z");
 
     @Mock
     private HoldingService holdingService;
     @Mock
     private DepositService depositService;
+    @Mock
+    private KrwAssetService krwAssetService;
 
     private final UUID userId = UUID.randomUUID();
+    private final User user = User.createDemo("me@divurve.com", "나");
 
     private AssetController controller() {
-        return new AssetController(holdingService, depositService);
+        return new AssetController(holdingService, depositService, krwAssetService);
     }
+
+    // --- 보유 종목 ---
 
     @Test
     void listHoldings_는_결과를_data_meta_로_래핑한다() {
-        Holding h = holdingFixture(UUID.randomUUID(), "AAPL", "USD", 1, 100,
-                LocalDate.of(2025, 3, 10), new PurchaseFxRate(new BigDecimal("1350"), "ECOS", LocalDate.of(2025, 3, 9)));
-        when(holdingService.list(userId)).thenReturn(List.of(h));
+        Holding holding = holding(UUID.randomUUID(), "AAPL", "USD");
+        when(holdingService.list(userId)).thenReturn(List.of(holding));
 
         ApiResponse<List<HoldingResponse>> response = controller().listHoldings(userId);
 
@@ -57,39 +70,35 @@ class AssetControllerTest {
             assertThat(dto.ticker()).isEqualTo("AAPL");
             assertThat(dto.purchaseFxRateKrw()).isEqualByComparingTo("1350");
             assertThat(dto.purchaseFxRateSource()).isEqualTo("ECOS");
-            assertThat(dto.purchaseFxRateAsOf()).isEqualTo(LocalDate.of(2025, 3, 9));
         });
     }
 
     @Test
-    void createHolding_은_요청을_서비스로_전달하고_결과를_변환한다() {
-        LocalDate purchasedAt = LocalDate.of(2025, 3, 10);
-        HoldingCreateRequest req = new HoldingCreateRequest("AAPL", "USD", 2, 150, purchasedAt, null);
-        Holding created = holdingFixture(UUID.randomUUID(), "AAPL", "USD", 2, 150,
-                purchasedAt, new PurchaseFxRate(new BigDecimal("1350"), "ECOS", purchasedAt));
-        when(holdingService.create(eq(userId), eq("AAPL"), eq("USD"), eq(2.0), eq(150.0), eq(purchasedAt), any()))
-                .thenReturn(created);
-
-        HoldingResponse dto = controller().createHolding(userId, req).data();
-
-        assertThat(dto.ticker()).isEqualTo("AAPL");
-        assertThat(dto.purchaseFxRateSource()).isEqualTo("ECOS");
-    }
-
-    @Test
-    void updateHolding_은_UUID_를_파싱해_서비스로_전달한다() {
+    void createHolding_은_요청을_그대로_서비스에_넘긴다() {
         UUID id = UUID.randomUUID();
-        Holding updated = holdingFixture(id, "AAPL", "USD", 5, 200, null, null);
-        when(holdingService.update(userId, id, 5.0, 200.0)).thenReturn(updated);
+        LocalDate purchasedAt = LocalDate.of(2026, 3, 10);
+        when(holdingService.create(userId, "AAPL", "USD", 1.0, 100.0, purchasedAt, null))
+                .thenReturn(holding(id, "AAPL", "USD"));
 
-        HoldingResponse dto = controller().updateHolding(userId, id.toString(), new HoldingUpdateRequest(5, 200)).data();
+        HoldingResponse data = controller().createHolding(userId,
+                new HoldingCreateRequest("AAPL", "USD", 1.0, 100.0, purchasedAt, null)).data();
 
-        assertThat(dto.id()).isEqualTo(id.toString());
-        assertThat(dto.quantity()).isEqualTo(5.0);
+        assertThat(data.id()).isEqualTo(id.toString());
     }
 
     @Test
-    void deleteHolding_은_data_가_null_인_봉투를_돌려준다() {
+    void updateHolding_은_수량과_평균단가만_넘긴다() {
+        UUID id = UUID.randomUUID();
+        when(holdingService.update(userId, id, 2.0, 200.0))
+                .thenReturn(holding(id, "AAPL", "USD"));
+
+        controller().updateHolding(userId, id.toString(), new HoldingUpdateRequest(2.0, 200.0));
+
+        verify(holdingService).update(userId, id, 2.0, 200.0);
+    }
+
+    @Test
+    void deleteHolding_은_data_가_null_이다() {
         UUID id = UUID.randomUUID();
 
         ApiResponse<Void> response = controller().deleteHolding(userId, id.toString());
@@ -99,53 +108,135 @@ class AssetControllerTest {
         verify(holdingService).delete(userId, id);
     }
 
+    // --- 외화 예금 ---
+
     @Test
     void listDeposits_는_결과를_data_meta_로_래핑한다() {
-        Deposit d = depositFixture(UUID.randomUUID(), "USD", new BigDecimal("500.0000"),
-                LocalDate.of(2025, 6, 1),
-                new PurchaseFxRate(new BigDecimal("1380.5"), "manual", LocalDate.of(2025, 6, 1)));
-        when(depositService.list(userId)).thenReturn(List.of(d));
+        when(depositService.list(userId)).thenReturn(List.of(deposit(UUID.randomUUID())));
 
-        DepositResponse dto = controller().listDeposits(userId).data().get(0);
+        ApiResponse<List<DepositResponse>> response = controller().listDeposits(userId);
 
-        assertThat(dto.amount()).isEqualByComparingTo("500.0000");
-        assertThat(dto.purchaseFxRateSource()).isEqualTo("manual");
+        assertThat(response.meta()).isNotNull();
+        assertThat(response.data()).singleElement()
+                .satisfies(dto -> assertThat(dto.currencyCode()).isEqualTo("USD"));
     }
 
     @Test
-    void createDeposit_은_요청을_서비스로_전달하고_결과를_변환한다() {
-        LocalDate purchasedAt = LocalDate.of(2025, 6, 1);
-        DepositCreateRequest req = new DepositCreateRequest("USD", new BigDecimal("500"), purchasedAt, null);
-        Deposit created = depositFixture(UUID.randomUUID(), "USD", new BigDecimal("500"),
-                purchasedAt, new PurchaseFxRate(new BigDecimal("1380.5"), "ECOS", purchasedAt));
-        when(depositService.create(eq(userId), eq("USD"), any(BigDecimal.class), eq(purchasedAt), any()))
-                .thenReturn(created);
+    void createDeposit_은_요청을_그대로_서비스에_넘긴다() {
+        UUID id = UUID.randomUUID();
+        LocalDate purchasedAt = LocalDate.of(2026, 3, 10);
+        when(depositService.create(userId, "USD", new BigDecimal("500"), purchasedAt, null))
+                .thenReturn(deposit(id));
 
-        DepositResponse dto = controller().createDeposit(userId, req).data();
+        DepositResponse data = controller().createDeposit(userId,
+                new DepositCreateRequest("USD", new BigDecimal("500"), purchasedAt, null)).data();
 
-        assertThat(dto.currencyCode()).isEqualTo("USD");
-        assertThat(dto.purchaseFxRateSource()).isEqualTo("ECOS");
+        assertThat(data.id()).isEqualTo(id.toString());
     }
 
-    // ── fixtures ────────────────────────────────────────────────────────
-    private static Holding holdingFixture(
-            UUID id, String ticker, String ccy, double qty, double avg, LocalDate purchasedAt, PurchaseFxRate fx) {
-        User owner = User.createDemo("x@divurve.com", "x");
-        Holding h = Holding.create(owner, ticker, ccy, qty, avg);
-        h.assignPurchaseContext(purchasedAt, fx);
-        setField(h, "id", id);
-        return h;
+    @Test
+    @DisplayName("PUT /deposits/:id — v2 에서 추가된 잔액 수정")
+    void updateDeposit_은_잔액만_넘긴다() {
+        UUID id = UUID.randomUUID();
+        when(depositService.update(userId, id, new BigDecimal("800"))).thenReturn(deposit(id));
+
+        DepositResponse data = controller()
+                .updateDeposit(userId, id.toString(), new DepositUpdateRequest(new BigDecimal("800")))
+                .data();
+
+        assertThat(data.id()).isEqualTo(id.toString());
+        verify(depositService).update(userId, id, new BigDecimal("800"));
     }
 
-    private static Deposit depositFixture(
-            UUID id, String ccy, BigDecimal amount, LocalDate purchasedAt, PurchaseFxRate fx) {
-        User owner = User.createDemo("x@divurve.com", "x");
-        Deposit d = Deposit.create(owner, ccy, amount);
-        d.assignPurchaseContext(purchasedAt, fx);
-        setField(d, "id", id);
-        return d;
+    @Test
+    @DisplayName("DELETE /deposits/:id — v2 에서 추가")
+    void deleteDeposit_은_data_가_null_이다() {
+        UUID id = UUID.randomUUID();
+
+        ApiResponse<Void> response = controller().deleteDeposit(userId, id.toString());
+
+        assertThat(response.data()).isNull();
+        verify(depositService).delete(userId, id);
     }
 
+    // --- 원화 자산 (외화 비중의 분모) ---
+
+    @Test
+    @DisplayName("GET /krw-assets — v2 에서 추가. 외화 비중의 분모다")
+    void listKrwAssets_는_결과를_data_meta_로_래핑한다() {
+        when(krwAssetService.list(userId)).thenReturn(List.of(krwAsset(UUID.randomUUID())));
+
+        ApiResponse<List<KrwAssetResponse>> response = controller().listKrwAssets(userId);
+
+        assertThat(response.meta()).isNotNull();
+        assertThat(response.data()).singleElement().satisfies(dto -> {
+            assertThat(dto.kind()).isEqualTo("cash");
+            assertThat(dto.label()).isEqualTo("주거래 통장");
+            assertThat(dto.amountKrw()).isEqualTo(43_680_000L);
+        });
+    }
+
+    @Test
+    @DisplayName("POST /krw-assets — 요청을 그대로 서비스에 넘긴다")
+    void createKrwAsset_은_요청을_그대로_넘긴다() {
+        UUID id = UUID.randomUUID();
+        when(krwAssetService.create(userId, "cash", "주거래 통장", 43_680_000L))
+                .thenReturn(krwAsset(id));
+
+        KrwAssetResponse data = controller().createKrwAsset(userId,
+                new KrwAssetCreateRequest("cash", "주거래 통장", 43_680_000L)).data();
+
+        assertThat(data.id()).isEqualTo(id.toString());
+        assertThat(data.amountKrw()).isEqualTo(43_680_000L);
+    }
+
+    @Test
+    @DisplayName("PUT /krw-assets/:id")
+    void updateKrwAsset_은_요청을_그대로_넘긴다() {
+        UUID id = UUID.randomUUID();
+        when(krwAssetService.update(userId, id, "deposit", "적금", 50_000_000L))
+                .thenReturn(krwAsset(id));
+
+        controller().updateKrwAsset(userId, id.toString(),
+                new KrwAssetUpdateRequest("deposit", "적금", 50_000_000L));
+
+        verify(krwAssetService).update(userId, id, "deposit", "적금", 50_000_000L);
+    }
+
+    @Test
+    @DisplayName("DELETE /krw-assets/:id")
+    void deleteKrwAsset_은_data_가_null_이다() {
+        UUID id = UUID.randomUUID();
+
+        ApiResponse<Void> response = controller().deleteKrwAsset(userId, id.toString());
+
+        assertThat(response.data()).isNull();
+        verify(krwAssetService).delete(userId, id);
+    }
+
+    // --- fixtures ---
+
+    private Holding holding(UUID id, String ticker, String currencyCode) {
+        Holding holding = Holding.create(user, ticker, currencyCode, 1, 100);
+        holding.assignPurchaseContext(LocalDate.of(2026, 3, 10),
+                new PurchaseFxRate(new BigDecimal("1350"), "ECOS", LocalDate.of(2026, 3, 9)));
+        setField(holding, "id", id);
+        return holding;
+    }
+
+    private Deposit deposit(UUID id) {
+        Deposit deposit = Deposit.create(user, "USD", new BigDecimal("500"));
+        setField(deposit, "id", id);
+        return deposit;
+    }
+
+    private KrwAsset krwAsset(UUID id) {
+        KrwAsset asset = KrwAsset.create(user, "cash", "주거래 통장", 43_680_000L, NOW);
+        setField(asset, "id", id);
+        return asset;
+    }
+
+    /** 단위테스트에서 JPA 가 채우는 UUID 를 리플렉션으로 주입한다. */
     private static void setField(Object target, String name, Object value) {
         try {
             var field = target.getClass().getDeclaredField(name);

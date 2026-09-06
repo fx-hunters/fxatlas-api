@@ -1,238 +1,355 @@
 package com.divurve.domain.forecast;
 
-import static org.junit.jupiter.api.Assertions.*;
-import static org.mockito.Mockito.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.when;
 
+import com.divurve.common.exception.InvalidRequestException;
+import com.divurve.domain.holding.DepositRepository;
+import com.divurve.domain.holding.HoldingRepository;
+import com.divurve.domain.holding.entity.Deposit;
+import com.divurve.domain.holding.entity.Holding;
 import com.divurve.domain.port.EconomicEventProvider;
 import com.divurve.domain.port.FxRateHistoryProvider;
 import com.divurve.domain.port.FxRateProvider;
-import com.divurve.domain.port.MacroIndicatorProvider;
 import com.divurve.domain.port.RateSnapshot;
+import com.divurve.domain.user.entity.User;
+import com.divurve.engine.volatility.RegimeClassifier;
+import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
-import java.util.Map;
+import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+/**
+ * {@link ForecastService} 검증 (명세 v2 §5.7·§5.8).
+ *
+ * <p>이전 테스트는 하드코딩 목값({@code hitRate 0.62}, {@code mae 15.5})을 그대로 받아 적는 수준이라
+ * 계산을 검증하지 못했다. 여기서는 <b>구간이 결정적으로 재현되는지</b>와 <b>워크포워드 검증이
+ * 실제 관측으로 돌아가는지</b>를 확인한다.
+ */
 @ExtendWith(MockitoExtension.class)
+@DisplayName("ForecastService")
 class ForecastServiceTest {
+
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 1);
+    private static final double BASE_RATE = 1382.40;
+
+    /** 5년 백분위 계산에 필요한 최소 관측 수(1290개 수익률) + 여유. */
+    private static final int LONG_HISTORY = 1400;
 
     @Mock
     private FxRateProvider fxRateProvider;
-
     @Mock
     private FxRateHistoryProvider historyProvider;
-
-    @Mock
-    private MacroIndicatorProvider macroProvider;
-
     @Mock
     private EconomicEventProvider eventProvider;
+    @Mock
+    private HoldingRepository holdingRepository;
+    @Mock
+    private DepositRepository depositRepository;
 
     private ForecastService service;
 
     @BeforeEach
     void setUp() {
         service = new ForecastService(
-            fxRateProvider,
-            historyProvider,
-            macroProvider,
-            eventProvider
-        );
+                fxRateProvider,
+                historyProvider,
+                eventProvider,
+                holdingRepository,
+                depositRepository,
+                new RegimeClassifier(),
+                new QuoteUnitNormalizer(),
+                Clock.fixed(TODAY.atStartOfDay().toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
+    }
+
+    // ── GET /forecast ────────────────────────────────────────────
+
+    @Test
+    @DisplayName("예측 범위는 드리프트 0 로그정규의 닫힌 해라 같은 입력에 항상 같은 값이다")
+    void forecastIsDeterministic() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+        givenLatestRate();
+        givenNoAssets();
+
+        ForecastService.ForecastView first = service.getForecast(USER_ID, "USDKRW", 30);
+        ForecastService.ForecastView second = service.getForecast(USER_ID, "USD_KRW", 30);
+
+        assertEquals(first.interval80(), second.interval80());
+        assertEquals(first.band(), second.band());
+        assertEquals("USDKRW", first.pairCode());
     }
 
     @Test
-    void testGetForecast_HappyPath() {
-        String pairCode = "USD_KRW";
-        int horizon = 30;
+    @DisplayName("interval_80 은 정확히 band 의 마지막 점이고 width_pct 는 기준선 대비 폭이다")
+    void interval80MatchesLastBandPoint() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+        givenLatestRate();
+        givenNoAssets();
 
-        // Mock 데이터
-        RateSnapshot currentRate = new RateSnapshot(
-            pairCode,
-            new BigDecimal("1200.00"),
-            LocalDate.now(),
-            "ECOS",
-            Instant.now()
-        );
-        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(currentRate);
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 30);
+        ForecastService.BandPoint last = view.band().get(view.band().size() - 1);
 
-        // 과거 환율 데이터 (최소 5년+30일 = 1290일)
-        // 실제로 필요한 양 + 안전 마진
-        List<FxRateHistoryProvider.HistoryRateSnapshot> history = createHistoryData(6 * 252 + 30);
-        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), eq(5 * 252 + 30)))
-            .thenReturn(history);
-
-        // 실행
-        ForecastService.ForecastData result = service.getForecast(pairCode, horizon);
-
-        // 검증
-        assertNotNull(result);
-        assertEquals(pairCode, result.pairCode());
-        assertEquals(horizon, result.horizonDays());
-        assertEquals(1200.0, result.currentRate(), 1e-6);
-        assertNotNull(result.pathPoints());
-        assertNotNull(result.realized30d());
-        assertTrue(result.percentile5y() >= 0 && result.percentile5y() <= 100);
-        assertNotNull(result.regime());
+        assertEquals(30, view.band().size());
+        assertEquals(last.p80Lo(), view.interval80().lo());
+        assertEquals(last.p80Hi(), view.interval80().hi());
+        assertEquals((last.p80Hi() - last.p80Lo()) / BASE_RATE, view.interval80().widthPct(), 1e-12);
+        assertEquals(TODAY.plusDays(30), last.date());
     }
 
     @Test
-    void testGetForecast_NullHistory_YieldsNoDailyReturns() {
-        String pairCode = "USD_KRW";
-        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(snapshot(pairCode, "1200.00"));
-        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), anyInt()))
-            .thenReturn(null);
+    @DisplayName("model_path 는 드리프트 0 이라 전 구간 기준선과 같다 (L2 — 표시 전용)")
+    void modelPathIsFlatBaseline() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+        givenLatestRate();
+        givenNoAssets();
 
-        // 수익률이 하나도 없으면 30일 실현변동성을 계산할 수 없다.
-        IllegalArgumentException ex = assertThrows(
-            IllegalArgumentException.class, () -> service.getForecast(pairCode, 30));
-        assertTrue(ex.getMessage().contains("got 0"), ex.getMessage());
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 90);
+
+        assertEquals(90, view.modelPath().size());
+        assertTrue(view.modelPath().stream().allMatch(point -> point.rate() == BASE_RATE));
+        assertEquals(ForecastService.LABEL_MODEL_PATH, view.labels().modelPath());
+        assertEquals(ForecastService.LABEL_BAND, view.labels().band());
     }
 
     @Test
-    void testGetForecast_SingleHistoryPoint_YieldsNoDailyReturns() {
-        String pairCode = "USD_KRW";
-        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(snapshot(pairCode, "1200.00"));
-        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), anyInt()))
-            .thenReturn(createHistoryData(1));
+    @DisplayName("변동성이 5년 상위 구간이면 국면이 stress 이고 불확실성 안내가 넓어진다")
+    void elevatedVolatilityWidensNote() {
+        givenHistory(history(LONG_HISTORY, 0.004, 0.05));
+        givenLatestRate();
+        givenNoAssets();
 
-        // 관측치가 1개면 (n-1)=0개의 수익률만 나오므로 동일하게 계산 불가.
-        IllegalArgumentException ex = assertThrows(
-            IllegalArgumentException.class, () -> service.getForecast(pairCode, 30));
-        assertTrue(ex.getMessage().contains("got 0"), ex.getMessage());
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 30);
+
+        assertEquals("stress", view.volatility().regime());
+        assertTrue(view.volatility().volPercentile5y() > 0.90);
+        assertTrue(view.uncertaintyNote().contains("평시보다 넓습니다"));
+        assertEquals(ForecastService.DISCLAIMER, view.disclaimer());
     }
 
     @Test
-    void testGetForecast_IsDeterministic_ForFixedSeed() {
-        String pairCode = "USD_KRW";
-        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(snapshot(pairCode, "1200.00"));
-        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), eq(5 * 252 + 30)))
-            .thenReturn(createHistoryData(6 * 252 + 30));
+    @DisplayName("변동성이 평시 범위면 국면이 calm 이고 안내가 평소 수준이다")
+    void calmVolatilityKeepsNote() {
+        givenHistory(history(LONG_HISTORY, 0.02, 0.0005));
+        givenLatestRate();
+        givenNoAssets();
 
-        ForecastService.ForecastData first = service.getForecast(pairCode, 90);
-        ForecastService.ForecastData second = service.getForecast(pairCode, 90);
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 30);
 
-        // 시드가 고정되어 있으므로 같은 입력이면 같은 팬차트가 나와야 한다.
-        assertEquals(first.pathPoints(), second.pathPoints());
-        assertEquals(91, first.pathPoints().size()); // horizon + 1 시점
-        assertEquals(91, first.baseline().size());
-        assertEquals(1200.0, first.baseline().get(0), 1e-9);
+        assertEquals("calm", view.volatility().regime());
+        assertTrue(view.uncertaintyNote().contains("평시 범위"));
+        assertEquals(List.of(0.50, 0.80), view.modelInfo().intervalLevels());
+        assertTrue(view.modelInfo().assumptions().contains("30일"));
     }
 
     @Test
-    void testGetForecast_InvalidHorizon() {
-        assertThrows(IllegalArgumentException.class, () -> service.getForecast("USD_KRW", 50));
-        assertThrows(IllegalArgumentException.class, () -> service.getForecast("USD_KRW", 15));
+    @DisplayName("환율 1퍼센트 영향은 해당 통화 노출액의 1퍼센트다 (보유 종목 + 외화예금)")
+    void userImpactUsesRealExposure() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+        givenLatestRate();
+        // 10,000 USD 상당 종목 + 1,000 USD 예금 = 11,000 USD × 1382.40 = 15,206,400 KRW
+        when(holdingRepository.findByOwner_Id(USER_ID)).thenReturn(List.of(
+                holding("USD", 100.0, 100.0),
+                holding("JPY", 999.0, 999.0)));
+        when(depositRepository.findByOwner_Id(USER_ID)).thenReturn(List.of(
+                deposit("USD", "1000")));
+
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 30);
+
+        assertEquals(15_206_400L, view.userImpact().assetKrw());
+        assertEquals(152_064L, view.userImpact().per1pctKrw());
     }
 
     @Test
-    void testGetForecast_NullPairCode() {
-        assertThrows(NullPointerException.class, () -> service.getForecast(null, 30));
+    @DisplayName("보유 종목 없이 외화예금만 있어도 노출액에 잡힌다")
+    void userImpactFromDepositsOnly() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+        givenLatestRate();
+        when(holdingRepository.findByOwner_Id(USER_ID)).thenReturn(List.of());
+        when(depositRepository.findByOwner_Id(USER_ID)).thenReturn(List.of(deposit("USD", "1000")));
+
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 30);
+
+        assertEquals(1_382_400L, view.userImpact().assetKrw());
     }
 
     @Test
-    void testGetFactors_HappyPath() {
-        String pairCode = "USD_KRW";
+    @DisplayName("보유 자산이 없으면 영향은 0 — 없는 값을 만들지 않는다")
+    void userImpactZeroWithoutAssets() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+        givenLatestRate();
+        givenNoAssets();
 
-        List<ForecastService.ForecastFactor> result = service.getFactors(pairCode);
+        ForecastService.ForecastView view = service.getForecast(USER_ID, "USDKRW", 30);
 
-        assertNotNull(result);
-        assertEquals(3, result.size()); // 상위 3개
-        assertTrue(result.stream().allMatch(f -> f.key() != null && !f.key().isEmpty()));
-        assertTrue(result.stream().allMatch(f -> f.label() != null && !f.label().isEmpty()));
+        assertEquals(0L, view.userImpact().assetKrw());
+        assertEquals(0L, view.userImpact().per1pctKrw());
     }
 
     @Test
-    void testGetFactors_NullPairCode() {
-        assertThrows(NullPointerException.class, () -> service.getFactors(null));
+    @DisplayName("지평은 30 또는 90 만 허용한다")
+    void invalidHorizon() {
+        assertThrows(InvalidRequestException.class, () -> service.getForecast(USER_ID, "USDKRW", 45));
     }
 
     @Test
-    void testGetModelPerformance_HappyPath() {
-        String pairCode = "USD_JPY";
-        int horizon = 90;
+    @DisplayName("관측이 없으면 변동성을 만들어내지 않고 400 을 낸다")
+    void emptyHistoryFailsFast() {
+        givenHistory(List.of());
+        assertThrows(InvalidRequestException.class, () -> service.getForecast(USER_ID, "USDKRW", 30));
 
-        ForecastService.ModelPerformanceData result = service.getModelPerformance(pairCode, horizon);
-
-        assertNotNull(result);
-        assertEquals(pairCode, result.pairCode());
-        assertEquals(horizon, result.horizonDays());
-        assertTrue(result.modelHitRate() >= 0 && result.modelHitRate() <= 1.0);
-        assertTrue(result.modelMae() > 0);
-        assertTrue(result.coverage80() >= 0 && result.coverage80() <= 1.0);
-        assertTrue(result.avgWidth() > 0);
+        givenHistory(null);
+        assertThrows(InvalidRequestException.class, () -> service.getForecast(USER_ID, "USDKRW", 30));
     }
 
     @Test
-    void testGetModelPerformance_InvalidHorizon() {
-        assertThrows(IllegalArgumentException.class, () -> service.getModelPerformance("USD_KRW", 60));
+    @DisplayName("5년 관측이 모자라면 백분위를 만들어내지 않고 400 을 낸다")
+    void shortHistoryFailsPercentile() {
+        givenHistory(history(200, 0.01, 0.01));
+        assertThrows(InvalidRequestException.class, () -> service.getForecast(USER_ID, "USDKRW", 30));
+    }
+
+    // ── GET /forecast/model-performance ──────────────────────────
+
+    @Test
+    @DisplayName("성적표는 실제 관측으로 워크포워드 검증한다 — 드리프트 0 이라 랜덤워크와 동률이 그대로 드러난다")
+    void modelPerformanceIsCalculated() {
+        givenHistory(history(LONG_HISTORY, 0.01, 0.01));
+
+        ForecastService.ModelPerformanceView view = service.getModelPerformance("USDKRW", 30);
+
+        assertEquals("USDKRW", view.pairCode());
+        assertEquals(30, view.horizonDays());
+        assertEquals(24, view.validation().folds());
+        assertEquals("rolling_walk_forward", view.validation().method());
+        assertTrue(view.validation().leakageGuard());
+        // 점예측이 랜덤워크와 같으므로 MAE 가 일치하고 개선율은 0 이다 — 숨기지 않는다.
+        assertEquals(view.randomWalk().mae(), view.model().mae(), 1e-12);
+        assertEquals(0.0, view.rwImprovement(), 1e-12);
+        assertTrue(view.model().coverage80() >= 0.0 && view.model().coverage80() <= 1.0);
+        assertTrue(view.model().avgWidth() > 0.0);
+        assertEquals(ForecastService.PERFORMANCE_NOTE, view.note());
+        assertEquals(Instant.parse("2026-09-01T00:00:00Z"), view.evaluatedAt());
     }
 
     @Test
-    void testGetEvents_HappyPath() {
-        List<EconomicEventProvider.EconomicEvent> events = List.of(
-            new EconomicEventProvider.EconomicEvent(
-                LocalDate.now().plusDays(5),
-                "Fed Rate Decision",
-                "USD",
-                "High"
-            )
-        );
-        when(eventProvider.fetchUpcoming(any(LocalDate.class), anyInt())).thenReturn(events);
+    @DisplayName("관측이 모자라면 가능한 폴드만 평가한다")
+    void modelPerformanceStopsWhenHistoryRunsOut() {
+        givenHistory(history(100, 0.01, 0.01));
 
-        List<ForecastService.EconomicEventData> result = service.getEvents();
+        ForecastService.ModelPerformanceView view = service.getModelPerformance("USDKRW", 30);
 
-        assertNotNull(result);
-        assertEquals(1, result.size());
-        assertEquals("Fed Rate Decision", result.get(0).title());
+        assertEquals(2, view.validation().folds());
     }
 
     @Test
-    void testExtendRatesByTriangulation_HappyPath() {
-        Map<String, Double> baseRates = new HashMap<>();
-        baseRates.put("USD_KRW", 1200.0);
-        baseRates.put("USD_JPY", 110.0);
-        baseRates.put("EUR_USD", 1.1);
+    @DisplayName("폴드를 하나도 만들 수 없으면 성적을 지어내지 않고 400 을 낸다")
+    void modelPerformanceWithoutFolds() {
+        givenHistory(history(40, 0.01, 0.01));
 
-        Map<String, Double> result = service.extendRatesByTriangulation(baseRates);
-
-        assertNotNull(result);
-        assertTrue(result.containsKey("EUR_KRW"));
-        assertTrue(result.containsKey("EUR_JPY"));
-        assertEquals(1320.0, result.get("EUR_KRW"), 1e-6);
-        assertEquals(121.0, result.get("EUR_JPY"), 1e-6);
+        assertThrows(InvalidRequestException.class, () -> service.getModelPerformance("USDKRW", 30));
     }
 
     @Test
-    void testExtendRatesByTriangulation_MissingRequired() {
-        Map<String, Double> baseRates = new HashMap<>();
-        baseRates.put("USD_KRW", 1200.0);
-
-        assertThrows(IllegalArgumentException.class,
-            () -> service.extendRatesByTriangulation(baseRates));
+    @DisplayName("성적표도 지평 검증을 거친다")
+    void modelPerformanceInvalidHorizon() {
+        assertThrows(InvalidRequestException.class, () -> service.getModelPerformance("USDKRW", 7));
     }
 
-    private RateSnapshot snapshot(String pairCode, String rate) {
-        return new RateSnapshot(pairCode, new BigDecimal(rate), LocalDate.now(), "ECOS", Instant.now());
+    // ── 그 외 ────────────────────────────────────────────────────
+
+    @Test
+    @DisplayName("전망 동인은 출처 확정 전까지 빈 목록이다 (L2)")
+    void factorsAreEmpty() {
+        assertEquals("USDKRW", service.getFactors("usd_krw").pairCode());
     }
 
-    private List<FxRateHistoryProvider.HistoryRateSnapshot> createHistoryData(int count) {
-        List<FxRateHistoryProvider.HistoryRateSnapshot> history = new ArrayList<>();
-        double baseRate = 1200.0;
-        for (int i = 0; i < count; i++) {
-            double rate = baseRate + (Math.sin(i * 0.05) * 10); // 약간의 변동성 추가
-            history.add(new FxRateHistoryProvider.HistoryRateSnapshot(
-                LocalDate.now().minusDays(count - i),
-                rate
-            ));
+    @Test
+    @DisplayName("경제 일정은 어댑터가 준 사실만 옮긴다")
+    void events() {
+        when(eventProvider.fetchUpcoming(TODAY, 90)).thenReturn(List.of(
+                new EconomicEventProvider.EconomicEvent(
+                        LocalDate.of(2026, 9, 17), "FOMC", "USD", "high")));
+
+        List<ForecastService.EconomicEventView> events = service.getEvents();
+
+        assertEquals(1, events.size());
+        assertEquals("FOMC", events.get(0).title());
+        assertEquals("USD", events.get(0).currencyCode());
+        assertEquals("high", events.get(0).importance());
+        assertEquals(LocalDate.of(2026, 9, 17), events.get(0).date());
+        assertFalse(ForecastService.MODEL_VERSION.isBlank());
+        assertEquals(30, ForecastService.DEFAULT_HORIZON_DAYS);
+    }
+
+    // ── 픽스처 ───────────────────────────────────────────────────
+
+    private void givenHistory(List<FxRateHistoryProvider.HistoryRateSnapshot> history) {
+        lenient().when(historyProvider.fetchHistorical(eq("USD_KRW"), any(LocalDate.class), anyInt()))
+                .thenReturn(history);
+    }
+
+    private void givenLatestRate() {
+        lenient().when(fxRateProvider.fetchLatest(anyString())).thenAnswer(invocation ->
+                new RateSnapshot(
+                        invocation.getArgument(0),
+                        BigDecimal.valueOf(BASE_RATE),
+                        TODAY,
+                        "TEST",
+                        TODAY.atStartOfDay().toInstant(ZoneOffset.UTC)));
+    }
+
+    private void givenNoAssets() {
+        lenient().when(holdingRepository.findByOwner_Id(USER_ID)).thenReturn(List.of());
+        lenient().when(depositRepository.findByOwner_Id(USER_ID)).thenReturn(List.of());
+    }
+
+    /**
+     * 결정적 합성 시계열. 마지막 40개 구간의 진폭을 따로 줘서 "최근 변동성"을 의도대로 만든다 —
+     * 난수를 쓰면 같은 테스트가 실행마다 다른 국면을 내 검증이 성립하지 않는다.
+     */
+    private static List<FxRateHistoryProvider.HistoryRateSnapshot> history(
+            int size, double baseAmplitude, double recentAmplitude) {
+        List<FxRateHistoryProvider.HistoryRateSnapshot> points = new ArrayList<>(size);
+        LocalDate start = TODAY.minusDays(size - 1L);
+        for (int i = 0; i < size; i++) {
+            double amplitude = i >= size - 40 ? recentAmplitude : baseAmplitude;
+            double rate = BASE_RATE * Math.exp(amplitude * Math.sin(i * 1.7));
+            points.add(new FxRateHistoryProvider.HistoryRateSnapshot(start.plusDays(i), rate));
         }
-        return history;
+        // 마지막 점은 기준 환율과 일치시켜 base_rate 와 history 끝점이 어긋나지 않게 한다.
+        points.set(size - 1, new FxRateHistoryProvider.HistoryRateSnapshot(TODAY, BASE_RATE));
+        return points;
+    }
+
+    private static User testUser() {
+        return User.create("test@divurve.local", "테스트", "hash", null);
+    }
+
+    private static Holding holding(String currencyCode, double quantity, double avgPrice) {
+        return Holding.create(testUser(), "TEST", currencyCode, quantity, avgPrice);
+    }
+
+    private static Deposit deposit(String currencyCode, String amount) {
+        return Deposit.create(testUser(), currencyCode, new BigDecimal(amount));
     }
 }

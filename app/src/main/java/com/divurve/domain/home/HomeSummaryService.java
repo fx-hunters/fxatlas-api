@@ -1,89 +1,248 @@
 package com.divurve.domain.home;
 
 import com.divurve.common.architecture.UseCase;
+import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
-import com.divurve.domain.holding.DepositService;
-import com.divurve.domain.holding.HoldingService;
+import com.divurve.domain.forecast.ForecastService;
+import com.divurve.domain.forecast.ForecastService.EconomicEventView;
+import com.divurve.domain.forecast.ForecastService.ForecastView;
+import com.divurve.domain.goal.GoalService;
+import com.divurve.domain.goal.entity.Goal;
+import com.divurve.domain.market.MarketRegimeService;
+import com.divurve.domain.market.MarketRegimeService.MarketRegimeView;
+import com.divurve.domain.route.RouteFeatureFlag;
+import com.divurve.domain.settings.RiskProfileService;
+import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.user.UserRepository;
-import com.divurve.domain.user.entity.User;
+import com.divurve.domain.xray.XrayService;
+import com.divurve.domain.xray.XrayService.PortfolioSnapshot;
 import java.time.Instant;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Locale;
+import java.util.Objects;
 import java.util.UUID;
 import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 홈 요약 정보 유스케이스 (이슈 #21, FR-HM-01~07).
- * 오늘의 행동·외화현황·주의필요·주간변화·시장요약을 집계한다.
- * 각 영역은 기존 도메인 서비스 결과를 조합하되, 새로운 계산은 engine 모듈에서만 수행한다.
+ * 홈 요약 유스케이스 (API 명세 v2 §5.11, 요구사항 v2 §4.4 FR-HM-01~08, 이슈 #54(7.5)).
+ *
+ * <p>화면 v2 §11 의 6블록을 조합한다 — <b>블록 순서는 고정</b>이며(FR-HM-07, NFR-UI-01) 사용자별로
+ * 재정렬하지 않는다. 이 서비스는 새로운 계산을 하지 않고, 이미 검증된 다른 UseCase(
+ * {@link XrayService}·{@link RiskProfileService}·{@link ForecastService}·{@link MarketRegimeService}·
+ * {@link GoalService})의 공개 메서드만 조회해 평탄화한다(CLAUDE.md §1 "계산은 engine 만 한다").
+ *
+ * <p><b>빈 상태는 에러가 아니다</b>. 사용자가 아직 자산·목표·진단을 채우지 않았어도 200 과 함께
+ * 빈 블록을 낸다 — 블록 자체를 생략하지 않는다(명세 §5.11 {@code state}).
  */
 @UseCase
 public class HomeSummaryService {
 
+    /** 블록 키·순서 (명세 §5.11 {@code blocks[]}, 고정). */
+    public static final String BLOCK_TODAY = "today";
+    public static final String BLOCK_PROFILE_FIT = "profile_fit";
+    public static final String BLOCK_FX_STATUS = "fx_status";
+    public static final String BLOCK_GOALS_ROUTE = "goals_route";
+    public static final String BLOCK_ATTENTION = "attention";
+    public static final String BLOCK_FORECAST = "forecast";
+
+    /** 블록 상태 어휘 (명세 §5.11). */
+    public static final String STATE_FILLED = "filled";
+    public static final String STATE_EMPTY = "empty";
+    public static final String STATE_ROUTE_PENDING = "route_pending";
+    public static final String STATE_NOT_MEASURED = "not_measured";
+
+    /** {@code forecast} 블록에 쓰는 대표 통화쌍 — 요구사항 v2 §4.5 "USD·JPY·EUR Mock 전환" 중 기본값. */
+    private static final String DEFAULT_PAIR_CODE = "USDKRW";
+
+    /** {@code attention.upcoming_events} 로 좁히는 임박 기준(일) — 화면 v2 §11 "임박 일정". */
+    private static final int UPCOMING_EVENT_WINDOW_DAYS = 14;
+
     private final UserRepository userRepository;
-    private final HoldingService holdingService;
-    private final DepositService depositService;
+    private final XrayService xrayService;
+    private final RiskProfileService riskProfileService;
+    private final ForecastService forecastService;
+    private final MarketRegimeService marketRegimeService;
+    private final GoalService goalService;
+    private final RouteFeatureFlag routeFeatureFlag;
 
     public HomeSummaryService(
-            UserRepository userRepository, HoldingService holdingService, DepositService depositService) {
-        this.userRepository = userRepository;
-        this.holdingService = holdingService;
-        this.depositService = depositService;
+            UserRepository userRepository,
+            XrayService xrayService,
+            RiskProfileService riskProfileService,
+            ForecastService forecastService,
+            MarketRegimeService marketRegimeService,
+            GoalService goalService,
+            RouteFeatureFlag routeFeatureFlag) {
+        this.userRepository = Objects.requireNonNull(userRepository, "userRepository");
+        this.xrayService = Objects.requireNonNull(xrayService, "xrayService");
+        this.riskProfileService = Objects.requireNonNull(riskProfileService, "riskProfileService");
+        this.forecastService = Objects.requireNonNull(forecastService, "forecastService");
+        this.marketRegimeService = Objects.requireNonNull(marketRegimeService, "marketRegimeService");
+        this.goalService = Objects.requireNonNull(goalService, "goalService");
+        this.routeFeatureFlag = Objects.requireNonNull(routeFeatureFlag, "routeFeatureFlag");
     }
 
     /**
-     * 사용자의 홈 요약 정보를 조회한다.
+     * 홈 요약 6블록을 조회한다.
      *
      * @param userId 사용자 ID
-     * @return 홈 요약 정보
+     * @return 홈 요약 (블록 순서 고정)
      * @throws NotFoundException 사용자를 찾을 수 없는 경우
      */
     @Transactional(readOnly = true)
     public HomeSummaryView getSummary(UUID userId) {
-        // 사용자 존재 확인
         userRepository.findById(userId)
                 .orElseThrow(() -> new NotFoundException("사용자를 찾을 수 없습니다."));
 
-        // 현재 보유 자산 조회
-        var holdings = holdingService.list(userId);
-        var deposits = depositService.list(userId);
+        MarketRegimeView regime = marketRegimeService.getRegime();
+        PortfolioSnapshot portfolio = xrayService.getPortfolio(userId);
+        RiskProfileView riskProfile = riskProfileService.getRiskProfile(userId);
+        ForecastBlockResult forecastResult = resolveForecast(userId);
 
-        // 기본 요약 정보 구성
-        // 실제 계산(히어로 숫자, 변화, 시장 요약)은 이후 engine 모듈과 연계
+        TodayView today = resolveToday(regime, portfolio);
+        ProfileFitView profileFit = resolveProfileFit(riskProfile, portfolio);
+        FxStatusView fxStatus = resolveFxStatus(portfolio);
+        GoalsRouteView goalsRoute = resolveGoalsRoute(userId);
+        AttentionView attention = resolveAttention(regime);
+
+        List<BlockView> blocks = List.of(
+                new BlockView(1, BLOCK_TODAY, STATE_FILLED),
+                new BlockView(2, BLOCK_PROFILE_FIT,
+                        riskProfile.riskType() == null ? STATE_NOT_MEASURED : STATE_FILLED),
+                new BlockView(3, BLOCK_FX_STATUS, portfolio.fxAssetKrw() > 0 ? STATE_FILLED : STATE_EMPTY),
+                new BlockView(4, BLOCK_GOALS_ROUTE, goalsRoute.state()),
+                new BlockView(5, BLOCK_ATTENTION, STATE_FILLED),
+                new BlockView(6, BLOCK_FORECAST, forecastResult.state()));
+
         return new HomeSummaryView(
-                new TodayAction(null), // 이번주 확보액 히어로 (추후 구현)
-                new CurrencyStatus(holdings.size() + deposits.size()), // 외화 자산 개수
-                new Notice("특이사항 없음"), // 주의필요 (추후 구현)
-                new WeeklyChange(null), // 주간 변화 (추후 구현)
-                new MarketSummary(null), // 시장 요약 (추후 구현)
-                Instant.now());
+                blocks, today, profileFit, fxStatus, goalsRoute, attention, forecastResult.view(),
+                regime.regime(), Instant.now());
     }
 
-    /** 홈 화면 요약 정보. */
+    private TodayView resolveToday(MarketRegimeView regime, PortfolioSnapshot portfolio) {
+        String topCurrency = portfolio.concentration().topCurrencyCode();
+        String headlineCode = topCurrency != null
+                ? "vol_%s_%s".formatted(regime.regime(), topCurrency.toLowerCase(Locale.ROOT))
+                : "regime_%s".formatted(regime.regime());
+        return new TodayView(headlineCode, regime.badge());
+    }
+
+    private ProfileFitView resolveProfileFit(RiskProfileView riskProfile, PortfolioSnapshot portfolio) {
+        return new ProfileFitView(riskProfile.riskType(), portfolio.concentration().status());
+    }
+
+    private FxStatusView resolveFxStatus(PortfolioSnapshot portfolio) {
+        return new FxStatusView(
+                portfolio.fxRatio(),
+                portfolio.concentration().topCurrencyCode(),
+                portfolio.sensitivity1pct().totalKrw(),
+                portfolio.dayChangeKrw());
+    }
+
+    /** Route 는 P — 플래그가 꺼져 있으면 빈 배열과 {@code route_enabled=false} 를 낸다(명세 §5.11·§6.2). */
+    private GoalsRouteView resolveGoalsRoute(UUID userId) {
+        if (!routeFeatureFlag.isEnabled()) {
+            return new GoalsRouteView(List.of(), false, STATE_ROUTE_PENDING);
+        }
+        List<Goal> goals = goalService.listByOwner(userId);
+        List<ActiveGoalView> activeGoals = goals.stream()
+                .map(goal -> new ActiveGoalView(
+                        goal.getId().toString(),
+                        goal.getName(),
+                        goal.getCurrencyCode(),
+                        goal.getTargetAmount(),
+                        goal.getTargetDate(),
+                        goal.getStatus()))
+                .toList();
+        return new GoalsRouteView(activeGoals, true, activeGoals.isEmpty() ? STATE_EMPTY : STATE_FILLED);
+    }
+
+    private AttentionView resolveAttention(MarketRegimeView regime) {
+        LocalDate cutoff = LocalDate.now().plusDays(UPCOMING_EVENT_WINDOW_DAYS);
+        List<EconomicEventView> upcoming = forecastService.getEvents().stream()
+                .filter(event -> !event.date().isAfter(cutoff))
+                .toList();
+        return new AttentionView(regime.badge(), upcoming);
+    }
+
+    /**
+     * {@code forecast} 블록 — 과거 관측이 부족해 계산이 불가능하면(신규 통화쌍 등) 에러가 아니라
+     * 빈 블록으로 처리한다(명세 §5.11 "데이터가 없으면 빈 상태 전용 처리").
+     */
+    private ForecastBlockResult resolveForecast(UUID userId) {
+        try {
+            ForecastView forecast = forecastService.getForecast(
+                    userId, DEFAULT_PAIR_CODE, ForecastService.DEFAULT_HORIZON_DAYS);
+            ForecastSummaryView view = new ForecastSummaryView(
+                    forecast.pairCode(),
+                    forecast.currentRate(),
+                    new IntervalView(forecast.interval80().lo(), forecast.interval80().hi()));
+            return new ForecastBlockResult(view, STATE_FILLED);
+        } catch (InvalidRequestException e) {
+            // 관측 부족 등 계산 불가 사유 — 빈 블록으로 처리하고 화면 이용을 막지 않는다.
+            return new ForecastBlockResult(null, STATE_EMPTY);
+        }
+    }
+
+    private record ForecastBlockResult(ForecastSummaryView view, String state) {
+    }
+
+    /**
+     * 홈 요약 (명세 §5.11 응답 전체 — {@code meta.regime} 은 대표 국면을 함께 싣는다).
+     *
+     * @param blocks       블록 순서·상태 (고정 순서, FR-HM-07)
+     * @param regime       대표 시장 국면 — 컨트롤러가 {@code meta.regime} 에 옮긴다
+     * @param referenceTime 조회 기준 시각
+     */
     public record HomeSummaryView(
-            TodayAction todayAction,
-            CurrencyStatus currencyStatus,
-            Notice notice,
-            WeeklyChange weeklyChange,
-            MarketSummary marketSummary,
+            List<BlockView> blocks,
+            TodayView today,
+            ProfileFitView profileFit,
+            FxStatusView fxStatus,
+            GoalsRouteView goalsRoute,
+            AttentionView attention,
+            ForecastSummaryView forecast,
+            String regime,
             Instant referenceTime) {
     }
 
-    /** 오늘의 행동 — 이번주 확보액 히어로 숫자. */
-    public record TodayAction(String heroAmount) {
+    /** 블록 메타 — 순서·키·상태. */
+    public record BlockView(int order, String key, String state) {
     }
 
-    /** 내 외화현황 — 보유 외화 자산 현황. */
-    public record CurrencyStatus(int totalAssets) {
+    /** 오늘의 핵심 — 헤드라인 코드와 배지. */
+    public record TodayView(String headlineCode, String badge) {
     }
 
-    /** 주의필요 — 특이사항 또는 조치 권장사항. */
-    public record Notice(String message) {
+    /** 위험성향·Fit 관계 — 대표 유형과 집중도 상태. */
+    public record ProfileFitView(String grade, String concentrationStatus) {
     }
 
-    /** 주간변화 — 주간 변동 요약. */
-    public record WeeklyChange(String summary) {
+    /** 외화 현황 — 비중·주력 통화·민감도·전일 대비. */
+    public record FxStatusView(
+            double fxRatio, String topCurrencyCode, long sensitivity1pctKrw, Long dayChangeKrw) {
     }
 
-    /** 시장요약 — 시장 정보 요약. */
-    public record MarketSummary(String summary) {
+    /** 목표 영역 — Route 확정 전까지는 항상 {@code routeEnabled=false}. */
+    public record GoalsRouteView(List<ActiveGoalView> activeGoals, boolean routeEnabled, String state) {
+    }
+
+    /** 활성 목표 요약. */
+    public record ActiveGoalView(
+            String id, String name, String currencyCode, double targetAmount,
+            LocalDate targetDate, String status) {
+    }
+
+    /** 주의 필요 — 시장 배지와 임박 일정. */
+    public record AttentionView(String regimeBadge, List<EconomicEventView> upcomingEvents) {
+    }
+
+    /** Forecast 요약 — 계산 불가 시 {@code null}. */
+    public record ForecastSummaryView(String pairCode, double currentRate, IntervalView interval80) {
+    }
+
+    /** 80퍼센트 예측 구간. */
+    public record IntervalView(double lo, double hi) {
     }
 }

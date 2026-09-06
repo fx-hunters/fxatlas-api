@@ -2,173 +2,144 @@ package com.divurve.domain.ai;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link AiResponseValidator} 수치 대조 테스트.
- * AI 가 생성한 narrative 에서 엔진 metrics 과 일치하는 숫자를 찾는지 검증.
+ * {@link AiResponseValidator} 수치 대조 테스트 (FR-AI-05, NFR-AI-02, 리뷰 B H3 대응).
+ * "서술의 숫자가 facts 에 있는지"를 검사한다 — facts 에 없는 숫자(날조)가 있으면 실패해야 한다.
  */
 class AiResponseValidatorTest {
 
     private final AiResponseValidator validator = new AiResponseValidator();
 
     @Test
-    void validateNarrative_정확한_숫자를_포함하면_true() {
-        String narrative = "귀사의 자산은 100000입니다.";
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
+    void verify_서술의_숫자가_facts에_있으면_true() {
+        boolean result = validator.verify(
+                List.of("자산은 100000입니다."), Map.of("amount", 100000.0));
 
         assertThat(result).isTrue();
     }
 
     @Test
-    void validateNarrative_백분율_형식의_숫자도_인식한다() {
-        String narrative = "위험도는 45%입니다.";
-        Map<String, Object> metrics = Map.of("risk_percent", 45.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
-
-        assertThat(result).isTrue();
-    }
-
-    @Test
-    void validateNarrative_허용_오차_1_범위내면_true() {
-        String narrative = "자산은 101000입니다.";
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
-
-        assertThat(result).isTrue();
-    }
-
-    @Test
-    void validateNarrative_허용_오차_초과면_false() {
-        String narrative = "자산은 102000입니다.";
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
+    void verify_facts에_없는_숫자를_지어내면_false() {
+        // 리뷰 B H3 — v1 은 이 케이스를 잡지 못했다(대조 방향이 반대였다).
+        boolean result = validator.verify(
+                List.of("자산은 999999입니다."), Map.of("amount", 100000.0));
 
         assertThat(result).isFalse();
     }
 
     @Test
-    void validateNarrative_숫자를_찾지_못하면_false() {
-        String narrative = "자산이 있습니다.";
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
+    void verify_대조할_숫자가_없어도_facts가_비어있지_않으면_true() {
+        // facts 에 숫자가 있더라도 서술이 숫자를 언급하지 않으면 날조 위험이 없다.
+        boolean result = validator.verify(
+                List.of("현재 상태는 안정적입니다."), Map.of("amount", 100000.0));
 
-        boolean result = validator.validateNarrative(narrative, metrics);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_퍼센트_표기를_비율로_정규화해_대조한다() {
+        // 리뷰 B M5 — facts 의 0.72 를 서술이 72% 로 써도 같은 값으로 인정한다.
+        boolean result = validator.verify(
+                List.of("변동성은 72%입니다."), Map.of("vol_percentile_5y", 0.72));
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_허용_오차_범위_내면_true() {
+        boolean result = validator.verify(
+                List.of("자산은 100500입니다."), Map.of("amount", 100000.0));
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_허용_오차를_벗어나면_false() {
+        boolean result = validator.verify(
+                List.of("자산은 105000입니다."), Map.of("amount", 100000.0));
 
         assertThat(result).isFalse();
     }
 
     @Test
-    void validateNarrative_null_narrative이면_false() {
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
+    void verify_중첩된_맵의_수치도_대조_대상에_포함한다() {
+        boolean result = validator.verify(
+                List.of("구간은 1346.0원에서 1431.0원 사이입니다."),
+                Map.of("interval_80", Map.of("lo", 1346.0, "hi", 1431.0)));
 
-        boolean result = validator.validateNarrative(null, metrics);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_한자리_정수는_사소한_개수_표현으로_보고_대조하지_않는다() {
+        boolean result = validator.verify(
+                List.of("이 설명은 4개의 문장으로 구성됩니다."), Map.of("amount", 100000.0));
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_소수점이_있으면_한자리여도_대조한다() {
+        boolean result = validator.verify(
+                List.of("환율은 9.9입니다."), Map.of("rate", 1.2345));
 
         assertThat(result).isFalse();
     }
 
     @Test
-    void validateNarrative_blank_narrative이면_false() {
-        Map<String, Object> metrics = Map.of("amount", 100000.0);
+    void verify_쉼표가_있는_숫자도_인식한다() {
+        boolean result = validator.verify(
+                List.of("자산은 1,000,000입니다."), Map.of("amount", 1000000.0));
 
-        boolean result = validator.validateNarrative("   ", metrics);
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_sentences가_비어있으면_true() {
+        boolean result = validator.verify(List.of(), Map.of("amount", 100000.0));
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void verify_facts가_비어있고_서술에_큰_숫자가_있으면_false() {
+        boolean result = validator.verify(
+                List.of("자산은 100000입니다."), Map.of());
 
         assertThat(result).isFalse();
     }
 
     @Test
-    void validateNarrative_여러_숫자가_있으면_하나라도_일치하면_true() {
-        String narrative = "총액은 100000이고 수익은 15000입니다.";
-        Map<String, Object> metrics = Map.of("total", 100000.0, "profit", 15000.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
+    void verify_0값과_정확히_일치하면_true() {
+        boolean result = validator.verify(
+                List.of("손실은 0.0입니다."), Map.of("loss", 0.0));
 
         assertThat(result).isTrue();
     }
 
     @Test
-    void validateNarrative_0값_처리() {
-        String narrative = "손실은 0입니다.";
-        Map<String, Object> metrics = Map.of("loss", 0.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
+    void verify_sentences가_null이면_true() {
+        boolean result = validator.verify(null, Map.of("amount", 100000.0));
 
         assertThat(result).isTrue();
     }
 
     @Test
-    void validateNarrative_소수점_숫자() {
-        String narrative = "환율은 1.2345입니다.";
-        Map<String, Object> metrics = Map.of("rate", 1.2345);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
+    void verify_리스트에_담긴_숫자도_대조_대상에_포함한다() {
+        boolean result = validator.verify(
+                List.of("환율은 1346.0원입니다."), Map.of("rates", List.of(1346.0, 1431.0)));
 
         assertThat(result).isTrue();
     }
 
     @Test
-    void validateNarrative_String_metrics_값은_무시한다() {
-        String narrative = "통화는 USD입니다.";
-        Map<String, Object> metrics = Map.of("currency", "USD", "amount", 100000.0);
-
-        // String 값은 무시하고, 숫자 값만 검증
-        boolean result = validator.validateNarrative(narrative, metrics);
-
-        assertThat(result).isFalse(); // 100000을 찾지 못함
-    }
-
-    @Test
-    void validateNarrative_기대값이_0인데_서술에_0이_없으면_false() {
-        String narrative = "총액은 5000입니다.";
-        Map<String, Object> metrics = Map.of("loss", 0.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
-
-        assertThat(result).isFalse();
-    }
-
-    @Test
-    void validateNarrative_수치가_아닌_metrics만_있으면_대조할_대상이_없어_true() {
-        String narrative = "통화는 USD 이며 별도의 수치는 없습니다.";
-        Map<String, Object> metrics = Map.of("currency_code", "USD");
-
-        // Number 가 아닌 값은 대조 대상에서 제외되므로 검증할 수치가 하나도 없다.
-        boolean result = validator.validateNarrative(narrative, metrics);
-
-        assertThat(result).isTrue();
-    }
-
-    @Test
-    void validateNarrative_metrics가_비어_있으면_true() {
-        boolean result = validator.validateNarrative("대조할 수치가 없습니다.", Map.of());
-
-        assertThat(result).isTrue();
-    }
-
-    @Test
-    void validateNarrative_숫자로_파싱되지_않는_토큰은_건너뛴다() {
-        // "1.2.3" 은 Double.parseDouble 에서 NumberFormatException 이 나며,
-        // 그 뒤의 100 을 계속 탐색해 일치를 찾아야 한다.
-        String narrative = "버전 1.2.3 기준 자산은 100입니다.";
-        Map<String, Object> metrics = Map.of("amount", 100.0);
-
-        boolean result = validator.validateNarrative(narrative, metrics);
-
-        assertThat(result).isTrue();
-    }
-
-    @Test
-    void validateNarrative_쉼표가_있는_숫자() {
-        String narrative = "자산은 1,000,000입니다.";
-        Map<String, Object> metrics = Map.of("amount", 1000000.0);
-
-        // 쉼표가 제거되고 1000000으로 인식됨
-        boolean result = validator.validateNarrative(narrative, metrics);
+    void verify_문자열_값은_대조_대상에서_제외된다() {
+        boolean result = validator.verify(
+                List.of("통화는 USD입니다."), Map.of("currency_code", "USD"));
 
         assertThat(result).isTrue();
     }

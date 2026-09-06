@@ -1,33 +1,77 @@
 package com.divurve.api.dto.home;
 
-import java.time.Instant;
+import com.divurve.api.dto.forecast.EventsResponse.Event;
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.time.LocalDate;
+import java.util.List;
 
-/** 홈 요약 조회 응답 (GET /home/summary). */
+/**
+ * 홈 요약 조회 응답 (GET /home/summary, API 명세 v2 §5.11).
+ * 6블록 순서는 고정이며 서버가 사용자별로 재정렬하지 않는다(FR-HM-07, NFR-UI-01).
+ * 데이터가 없는 블록도 생략하지 않고 {@code state} 로만 구분한다.
+ */
 public record HomeSummaryResponse(
-        TodayActionDto todayAction,
-        CurrencyStatusDto currencyStatus,
-        NoticeDto notice,
-        WeeklyChangeDto weeklyChange,
-        MarketSummaryDto marketSummary,
-        Instant referenceTime) {
+        List<BlockDto> blocks,
+        TodayDto today,
+        ProfileFitDto profileFit,
+        FxStatusDto fxStatus,
+        GoalsRouteDto goalsRoute,
+        AttentionDto attention,
+        ForecastDto forecast) {
 
-    /** 오늘의 행동 — 이번주 확보액 히어로 숫자. */
-    public record TodayActionDto(String heroAmount) {
+    /** 블록 순서·키·상태. {@code state}: filled/empty/route_pending/not_measured. */
+    public record BlockDto(
+            int order,
+            @Schema(example = "today") String key,
+            @Schema(example = "filled") String state) {
     }
 
-    /** 내 외화현황 — 보유 외화 자산 현황. */
-    public record CurrencyStatusDto(int totalAssets) {
+    /** 오늘의 핵심. */
+    public record TodayDto(
+            @Schema(example = "vol_elevated_usd") String headlineCode,
+            @Schema(example = "caution") String badge) {
     }
 
-    /** 주의필요 — 특이사항 또는 조치 권장사항. */
-    public record NoticeDto(String message) {
+    /** 위험성향·Fit 관계. */
+    public record ProfileFitDto(
+            @Schema(example = "balanced") String grade,
+            @Schema(example = "above_threshold") String concentrationStatus) {
     }
 
-    /** 주간변화 — 주간 변동 요약. */
-    public record WeeklyChangeDto(String summary) {
+    /** 외화 현황. */
+    public record FxStatusDto(
+            @Schema(example = "0.361") double fxRatio,
+            @Schema(example = "USD") String topCurrencyCode,
+            @Schema(example = "247200") long sensitivity1pctKrw,
+            @Schema(example = "84000") Long dayChangeKrw) {
     }
 
-    /** 시장요약 — 시장 정보 요약. */
-    public record MarketSummaryDto(String summary) {
+    /** 목표 영역 — Route 확정 전까지는 항상 {@code routeEnabled=false}. */
+    public record GoalsRouteDto(List<ActiveGoalDto> activeGoals, boolean routeEnabled) {
+    }
+
+    /** 활성 목표 요약. */
+    public record ActiveGoalDto(
+            String id, String name, String currencyCode, double targetAmount,
+            LocalDate targetDate, String status) {
+    }
+
+    /** 주의 필요. */
+    public record AttentionDto(
+            @Schema(example = "caution") String regimeBadge,
+            List<Event> upcomingEvents) {
+    }
+
+    /** Forecast 요약. 계산 불가 시 {@code null}(블록 {@code state=empty}). */
+    public record ForecastDto(
+            @Schema(example = "USDKRW") String pairCode,
+            @Schema(example = "1382.40") double currentRate,
+            Interval80Dto interval80) {
+    }
+
+    /** 80퍼센트 예측 구간. */
+    public record Interval80Dto(
+            @Schema(example = "1346.0") double lo,
+            @Schema(example = "1431.0") double hi) {
     }
 }

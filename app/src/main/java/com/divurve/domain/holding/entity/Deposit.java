@@ -73,6 +73,11 @@ public class Deposit {
         return new Deposit(owner, currencyCode, amount);
     }
 
+    /** 예금 잔액을 수정한다. 예치 시점 환율 근거는 유지된다 (FR-XR-07). */
+    public void updateAmount(BigDecimal amount) {
+        this.amount = amount;
+    }
+
     /** 매입 환율 컨텍스트(있으면 fx 3필드 모두, 없으면 null)를 붙인다. FR-ON-04. */
     public void assignPurchaseContext(LocalDate purchasedAt, PurchaseFxRate fxRate) {
         this.purchasedAt = purchasedAt;

@@ -281,7 +281,7 @@ class PlanPreviewServiceTest {
 
         assertThatThrownBy(() -> service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, null))
                 .isInstanceOfSatisfying(ForbiddenException.class,
-                        e -> assertThat(e.getCode()).isEqualTo("SPECULATIVE_PURPOSE_BLOCKED"))
+                        e -> assertThat(e.getCode()).isEqualTo("FORBIDDEN"))
                 .hasMessageContaining("투기성");
     }
 

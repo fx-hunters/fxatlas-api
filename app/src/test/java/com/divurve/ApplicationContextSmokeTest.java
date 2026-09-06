@@ -9,7 +9,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.divurve.engine.bucket.BucketAllocator;
 import com.divurve.engine.cost.CostCalculator;
-import com.divurve.engine.safemode.SafeModeEvaluator;
+import com.divurve.engine.volatility.RegimeClassifier;
 import com.divurve.engine.simulate.MonteCarloSimulator;
 import com.divurve.engine.split.SplitVarianceReducer;
 import java.util.ArrayList;
@@ -80,7 +80,7 @@ class ApplicationContextSmokeTest {
         assertThat(context.getBean(SplitVarianceReducer.class)).isNotNull();
         assertThat(context.getBean(CostCalculator.class)).isNotNull();
         assertThat(context.getBean(MonteCarloSimulator.class)).isNotNull();
-        assertThat(context.getBean(SafeModeEvaluator.class)).isNotNull();
+        assertThat(context.getBean(RegimeClassifier.class)).isNotNull();
     }
 
     /**

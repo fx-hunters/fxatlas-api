@@ -12,6 +12,6 @@ import org.springframework.http.HttpStatus;
 public class UnauthorizedException extends ApiException {
 
     public UnauthorizedException() {
-        super(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.", null, null);
+        super(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.", null);
     }
 }

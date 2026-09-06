@@ -9,6 +9,6 @@ import org.springframework.http.HttpStatus;
 public class NotImplementedException extends ApiException {
 
     public NotImplementedException() {
-        super(HttpStatus.NOT_IMPLEMENTED, "NOT_IMPLEMENTED", "아직 구현되지 않은 엔드포인트입니다.", null, null);
+        super(HttpStatus.NOT_IMPLEMENTED, "NOT_IMPLEMENTED", "아직 구현되지 않은 엔드포인트입니다.", null);
     }
 }

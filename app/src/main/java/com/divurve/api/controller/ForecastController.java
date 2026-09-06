@@ -1,205 +1,137 @@
 package com.divurve.api.controller;
 
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.forecast.EventsResponse;
 import com.divurve.api.dto.forecast.FactorsResponse;
 import com.divurve.api.dto.forecast.ForecastResponse;
 import com.divurve.api.dto.forecast.ModelPerformanceResponse;
 import com.divurve.common.architecture.WebAdapter;
 import com.divurve.common.response.ApiResponse;
+import com.divurve.common.response.Meta;
 import com.divurve.domain.forecast.ForecastService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.Parameter;
+import io.swagger.v3.oas.annotations.media.Content;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
-import java.time.LocalDate;
-import java.util.List;
+import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 환율 범위(전망·동인·성적표·일정) 엔드포인트 (명세 2·3.5·3.6장).
+ * 예측 범위 엔드포인트 (명세 v2 §5.7·§5.8, 요구사항 §4.5).
  *
- * <p>팬차트, 전망 동인, 모델 성적표, 경제 일정 조회를 제공한다.
- * FR-FC-10: 이 화면은 행동(매수/매도 제안)을 제시하지 않고 전망만 표시한다.
+ * <p>이 컨트롤러는 <b>조립하지 않는다</b>. v1 에서는 응답 매핑 메서드 4개가 여기 있었고 그 안에
+ * {@code TODO}·상수 0·빈 목록이 섞여 있어 "계산되지 않은 값"이 컨트롤러에서 만들어졌다.
+ * 이제 계산은 {@code ForecastService} 와 engine 이 하고, DTO 변환은 각 응답 레코드의
+ * {@code from(...)} 팩토리가 한다.
+ *
+ * <p>🔒 {@code model_path} 와 {@code /forecast/factors} 는 <b>L2(표시 전용)</b> 이다.
+ * 어떤 계산의 입력으로도 넘기지 않는다(FR-FC-12).
  */
 @WebAdapter
 @RestController
 @RequestMapping("/api/v1")
-@Tag(name = "Forecast", description = "팬차트·전망 동인·모델 성적표·경제 일정")
+@Tag(name = "Forecast", description = "예측 범위·변동성·전망 동인·모델 성적표·경제 일정")
 public class ForecastController {
 
     private final ForecastService forecastService;
 
     public ForecastController(ForecastService forecastService) {
-        this.forecastService = Objects.requireNonNull(forecastService);
+        this.forecastService = Objects.requireNonNull(forecastService, "forecastService");
     }
 
-    @Operation(summary = "팬차트·구간·변동성", description = "통화쌍별 30/90일 팬차트 데이터")
+    /**
+     * 예측 범위·변동성·내 자산 영향.
+     *
+     * <p>{@code meta} 에 {@code model_version}(예측 모델 계열 응답) 과 {@code regime}(시장 수치 동반) 을 싣는다.
+     */
+    @Operation(
+            summary = "예측 범위·변동성·내 자산 영향",
+            description = "드리프트 0 기준선에 실현변동성을 적용한 예측 범위(band)와 변동성 지표, "
+                    + "환율 1퍼센트 변동 시 보유 자산 영향을 반환한다. "
+                    + "band 는 '예측 범위/불확실성 구간'이며 변동성(volatility)과는 별개 지표다(FR-FC-04·05). "
+                    + "model_path 는 L2(표시 전용)이며 어떤 계산의 입력도 아니다(FR-FC-12). "
+                    + "방향 확률 필드는 제공하지 않는다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "200", description = "예측 범위. 시장이 급변해도 200 이다(FR-SF-01)."),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "pair_code 표기 오류 또는 horizon_days 가 30·90 이 아님",
+                    content = @Content),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "401", description = "인증 없음", content = @Content)
+    })
     @GetMapping("/forecast")
     public ApiResponse<ForecastResponse> getForecast(
-            @Parameter(description = "통화쌍 (USD_KRW, USD_JPY, EUR_USD 등)", example = "USD_KRW")
-            @RequestParam String pairCode,
-            @Parameter(description = "미래 지평 (일수)", example = "30")
-            @RequestParam int horizon) {
+            @CurrentUser UUID userId,
+            @Parameter(description = "통화쌍 (USDKRW · USDJPY · EURUSD)", example = "USDKRW")
+            @RequestParam("pair_code") String pairCode,
+            @Parameter(description = "지평 (30 또는 90). 기본 30", example = "30")
+            @RequestParam(name = "horizon_days", defaultValue = "30") int horizonDays) {
 
-        ForecastService.ForecastData data = forecastService.getForecast(pairCode, horizon);
-        ForecastResponse response = mapToForecastResponse(data);
-
-        return ApiResponse.of(response);
+        ForecastService.ForecastView view = forecastService.getForecast(userId, pairCode, horizonDays);
+        return ApiResponse.of(
+                ForecastResponse.from(view),
+                Meta.mock(Instant.now())
+                        .withRegime(view.volatility().regime())
+                        .withModelVersion(ForecastService.MODEL_VERSION));
     }
 
-    @Operation(summary = "전망 동인", description = "상위 3개 전망 동인 (참고용)")
+    /** 전망 동인 (L2 — 표시 전용). */
+    @Operation(
+            summary = "전망 동인 (L2 — 표시 전용)",
+            description = "참고용 동인 목록. 이 값은 어떤 계산의 입력도 되지 않으며 /route/context 에도 "
+                    + "포함되지 않는다(FR-FC-12). 출처가 확정되기 전까지 빈 배열이다.")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "동인 목록"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "pair_code 표기 오류", content = @Content)
+    })
     @GetMapping("/forecast/factors")
     public ApiResponse<FactorsResponse> getFactors(
-            @Parameter(description = "통화쌍 (USD_KRW, USD_JPY, EUR_USD 등)", example = "USD_KRW")
-            @RequestParam String pairCode) {
+            @Parameter(description = "통화쌍", example = "USDKRW")
+            @RequestParam("pair_code") String pairCode) {
 
-        List<ForecastService.ForecastFactor> factors = forecastService.getFactors(pairCode);
-        FactorsResponse response = mapToFactorsResponse(pairCode, factors);
-
-        return ApiResponse.of(response);
+        return ApiResponse.of(FactorsResponse.from(forecastService.getFactors(pairCode)));
     }
 
-    @Operation(summary = "모델 성적표", description = "방향 적중률, MAE, 구간 포함률 등")
+    /** 모델 성적표. */
+    @Operation(
+            summary = "모델 성적표",
+            description = "롤링 워크포워드 검증 결과. 각 폴드의 기준값은 그 시점까지의 실측값이라 "
+                    + "미래 누출이 없다. coverage_80 은 avg_width 와 함께 노출한다 — 구간을 넓히면 "
+                    + "포함률은 쉽게 오르기 때문이다. rw_improvement 가 0 이거나 음수여도 그대로 "
+                    + "보여준다(FR-FC-11).")
+    @ApiResponses({
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "성적표"),
+            @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                    responseCode = "400", description = "표기·지평 오류 또는 검증할 관측 부족", content = @Content)
+    })
     @GetMapping("/forecast/model-performance")
     public ApiResponse<ModelPerformanceResponse> getModelPerformance(
-            @Parameter(description = "통화쌍 (USD_KRW, USD_JPY, EUR_USD 등)", example = "USD_KRW")
-            @RequestParam String pairCode,
-            @Parameter(description = "미래 지평 (일수)", example = "30")
-            @RequestParam int horizon) {
+            @Parameter(description = "통화쌍", example = "USDKRW")
+            @RequestParam("pair_code") String pairCode,
+            @Parameter(description = "지평 (30 또는 90). 기본 30", example = "30")
+            @RequestParam(name = "horizon_days", defaultValue = "30") int horizonDays) {
 
-        ForecastService.ModelPerformanceData data = forecastService.getModelPerformance(pairCode, horizon);
-        ModelPerformanceResponse response = mapToModelPerformanceResponse(data);
-
-        return ApiResponse.of(response);
+        return ApiResponse.of(
+                ModelPerformanceResponse.from(forecastService.getModelPerformance(pairCode, horizonDays)),
+                Meta.mock(Instant.now()).withModelVersion(ForecastService.MODEL_VERSION));
     }
 
-    @Operation(summary = "경제 일정", description = "향후 90일 경제 이벤트")
+    /** 경제 일정. */
+    @Operation(
+            summary = "경제 일정",
+            description = "향후 90일 주요 정책회의·지표 발표 일정. 사실 정보이며 방향 전망이 아니다.")
+    @ApiResponses(@io.swagger.v3.oas.annotations.responses.ApiResponse(
+            responseCode = "200", description = "일정 목록"))
     @GetMapping("/events")
     public ApiResponse<EventsResponse> getEvents() {
-
-        List<ForecastService.EconomicEventData> events = forecastService.getEvents();
-        EventsResponse response = mapToEventsResponse(events);
-
-        return ApiResponse.of(response);
-    }
-
-    // ── 응답 매핑 ────────────────────────────────────
-
-    private ForecastResponse mapToForecastResponse(ForecastService.ForecastData data) {
-        List<ForecastResponse.History> history = data.history().stream()
-            .map(h -> new ForecastResponse.History(
-                h.date().toString(),
-                h.rate()
-            ))
-            .toList();
-
-        List<ForecastResponse.PathPoint> paths = data.pathPoints().stream()
-            .map(p -> new ForecastResponse.PathPoint(
-                "", // 날짜는 시뮬레이션 단계에서 추가되지 않음
-                p.p50Lo(),
-                p.p50Hi(),
-                p.p80Lo(),
-                p.p80Hi()
-            ))
-            .toList();
-
-        List<ForecastResponse.ModelPoint> modelPath = List.of(); // 모델 경로는 향후 추가
-
-        double p80Lo = data.pathPoints().isEmpty()
-            ? data.currentRate()
-            : data.pathPoints().get(data.pathPoints().size() - 1).p80Lo();
-        double p80Hi = data.pathPoints().isEmpty()
-            ? data.currentRate()
-            : data.pathPoints().get(data.pathPoints().size() - 1).p80Hi();
-
-        ForecastResponse.Interval interval80 = new ForecastResponse.Interval(
-            p80Lo,
-            p80Hi,
-            (p80Hi - p80Lo) / data.currentRate(),
-            0.0 // TODO: 3년 평균 대비 계산 필요
-        );
-
-        ForecastResponse.Volatility volatility = new ForecastResponse.Volatility(
-            data.realized30d(),
-            data.percentile5y(),
-            data.regime()
-        );
-
-        ForecastResponse.UserImpact userImpact = new ForecastResponse.UserImpact(
-            0L, // TODO: 사용자 자산 영향 계산
-            0L
-        );
-
-        return new ForecastResponse(
-            data.pairCode(),
-            data.horizonDays(),
-            data.currentRate(),
-            data.baseline().get(0),
-            history,
-            paths,
-            modelPath,
-            interval80,
-            volatility,
-            userImpact,
-            "이 전망은 과거 데이터 및 통계 모형 기반이며, 미래를 보장하지 않습니다."
-        );
-    }
-
-    private FactorsResponse mapToFactorsResponse(String pairCode, List<ForecastService.ForecastFactor> factors) {
-        List<FactorsResponse.Factor> factorList = factors.stream()
-            .map(f -> new FactorsResponse.Factor(
-                f.key(),
-                f.label(),
-                f.contribution(),
-                f.direction()
-            ))
-            .toList();
-
-        return new FactorsResponse(pairCode, factorList);
-    }
-
-    private ModelPerformanceResponse mapToModelPerformanceResponse(ForecastService.ModelPerformanceData data) {
-        ModelPerformanceResponse.Model model = new ModelPerformanceResponse.Model(
-            data.modelHitRate(),
-            data.modelMae(),
-            data.coverage80(),
-            data.avgWidth()
-        );
-
-        ModelPerformanceResponse.RandomWalk randomWalk = new ModelPerformanceResponse.RandomWalk(
-            data.rwHitRate(),
-            data.rwMae()
-        );
-
-        ModelPerformanceResponse.Validation validation = new ModelPerformanceResponse.Validation(
-            "Walk-forward validation",
-            5,
-            true
-        );
-
-        return new ModelPerformanceResponse(
-            data.pairCode(),
-            data.horizonDays(),
-            model,
-            randomWalk,
-            validation,
-            "모델은 과거 5년 데이터 기반 워크포워드 검증 결과입니다."
-        );
-    }
-
-    private EventsResponse mapToEventsResponse(List<ForecastService.EconomicEventData> events) {
-        List<EventsResponse.Event> eventList = events.stream()
-            .map(e -> new EventsResponse.Event(
-                e.date(),
-                e.title(),
-                e.currencyCode(),
-                e.importance()
-            ))
-            .toList();
-
-        return new EventsResponse(eventList);
+        return ApiResponse.of(EventsResponse.from(forecastService.getEvents()));
     }
 }

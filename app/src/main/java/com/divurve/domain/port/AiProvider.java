@@ -1,51 +1,51 @@
 package com.divurve.domain.port;
 
+import java.util.List;
 import java.util.Map;
 
 /**
- * 생성형 AI 포트 (명세 4장, NFR-AI-01~03).
- * domain 은 이 인터페이스만 알며, 실제 구현(infra 의 ClaudeAiProvider 등)은 알지 못한다(DIP).
- * AI 는 산술을 하지 않으며, 고정 스키마만 반환한다.
+ * 생성형 AI 포트 (API 명세 v2 §5.12, {@code docs/05-ai-usage-v2.md}).
+ * domain 은 이 인터페이스만 알며, 실제 구현(infra 의 실 LLM 어댑터 등)은 알지 못한다(DIP).
+ *
+ * <p>AI 는 <b>서술(narrate)</b> 만 한다 — 산술을 하지 않으며, {@link ExplainContext#facts()} 에 없는
+ * 숫자·사실을 만들어내지 않는다(FR-AI-01, FR-AI-02). {@code explain_level}·{@code explain_domain} 은
+ * 어휘·비유·설명 밀도에만 반영하고 어떤 계산에도 넣지 않는다(FR-CM-08, FR-AI-03).
+ *
+ * <p>{@code parseGoal} 은 v2 에서 삭제됐다(요구사항 v2 §0 개정표 — 자연어 목표 입력은 Route 상세설계
+ * 확정 전까지 MVP 범위 밖, {@code 03-api-spec-v2.md} §6.2 "그 외 {@code /goals} 쓰기 501").
  */
 public interface AiProvider {
 
     /**
-     * 엔진 결과를 설명 프로필에 맞춰 서술한다.
-     * @param profile 설명 유형 (간결/상세 등)
-     * @param metrics 엔진이 계산한 수치 (금액·확률 등)
-     * @return 서술 결과 (narrative)
+     * 엔진 결과를 설명 선호에 맞춰 서술한다.
+     *
+     * @param context 서술 화면·엔진 사실·설명 선호를 담은 그라운딩 컨텍스트
+     * @return 서술 결과 (고정 스키마 — 문장 목록)
      */
-    ExplainResult explain(String profile, Map<String, Object> metrics);
+    ExplainResult explain(ExplainContext context);
 
     /**
-     * 자연어 목표를 구조화된 제약으로 파싱한다.
-     * @param text 사용자의 자연어 목표
-     * @return 구조화 결과 (Parsed + confidence + missing)
+     * 서술 요청 컨텍스트 — AI 가 참조할 수 있는 <b>유일한</b> 입력이다(그라운딩, §5 1단계).
+     *
+     * @param surface       서술 대상 화면 (예: {@code forecast_summary}). {@code forecast_summary} 는
+     *                      항상 4문장이다(FR-FC-07, FR-AI-04)
+     * @param facts         계산 엔진이 만든 검증된 수치·사실. {@code regime} 이 포함되면 급변 상태
+     *                      안내를 반영한다(FR-SF-03)
+     * @param explainLevel  설명 선호 {@code simple/standard/detailed} — 표현에만 쓴다(FR-AI-03)
+     * @param explainDomain 익숙한 설명 분야 {@code finance/dev/marketing/plain} — 비유 소재로만 쓴다
      */
-    ParseResult parseGoal(String text);
+    record ExplainContext(
+            String surface,
+            Map<String, Object> facts,
+            String explainLevel,
+            String explainDomain) {
+    }
 
     /**
      * explain 결과 스키마.
-     * @param narrative 서술 문장 (단정적 표현·투자 권유 차단 전 원문)
+     *
+     * @param sentences 서술 문장 목록 (표현 필터·수치 대조 전 원문)
      */
-    record ExplainResult(String narrative) {}
-
-    /**
-     * parseGoal 결과 스키마.
-     * @param kind 목표 유형 (wealth/income 등)
-     * @param purpose 목적 (education/retirement 등)
-     * @param currencyCode 화폐 코드 (USD/EUR 등)
-     * @param targetAmount 목표 금액 (수치가 아니면 null)
-     * @param recurInterval 재정투입 주기 (monthly/yearly 등)
-     * @param confidence 각 필드의 신뢰도 0~1 (낮으면 사용자 재확인 권장)
-     * @param missing 구조화되지 못한 필드 목록
-     */
-    record ParseResult(
-            String kind,
-            String purpose,
-            String currencyCode,
-            Double targetAmount,
-            String recurInterval,
-            Map<String, Double> confidence,
-            java.util.List<String> missing) {}
+    record ExplainResult(List<String> sentences) {
+    }
 }

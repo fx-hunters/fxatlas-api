@@ -1,7 +1,6 @@
 package com.divurve.domain.plan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -176,7 +175,6 @@ class PlanStepExecutionServiceTest {
 
             // Then
             assertEquals(3, result.consecutiveSkips());
-            assertTrue(result.safeModeTriggered());
         }
 
         @Test
@@ -280,7 +278,6 @@ class PlanStepExecutionServiceTest {
             assertEquals(1000.0, step3.getAmount(), 1e-6);
             // 직전 회차(1회차)가 완료 상태이므로 연속 건너뛰기는 1
             assertEquals(1, result.consecutiveSkips());
-            assertFalse(result.safeModeTriggered());
         }
 
         @Test

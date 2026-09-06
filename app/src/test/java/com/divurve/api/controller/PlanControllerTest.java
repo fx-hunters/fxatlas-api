@@ -18,6 +18,7 @@ import com.divurve.api.dto.plan.StepCompleteRequest;
 import com.divurve.api.dto.plan.StepCompleteResponse;
 import com.divurve.api.dto.plan.StepSkipResponse;
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.common.exception.NotImplementedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.PlanAccessService;
@@ -31,6 +32,7 @@ import com.divurve.domain.plan.PlanStepRepository;
 import com.divurve.domain.plan.PlanStepStatus;
 import com.divurve.domain.plan.entity.Plan;
 import com.divurve.domain.plan.entity.PlanStep;
+import com.divurve.domain.route.RouteFeatureFlag;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -56,6 +58,9 @@ class PlanControllerTest {
     private PlanPreviewResponseMapper planPreviewResponseMapper;
     private PlanController controller;
 
+    /** route.enabled=false — 기본값. 6개 엔드포인트 전부 501 이어야 한다. */
+    private PlanController disabledController;
+
     private UUID userId;
     private UUID goalId;
     private UUID planId;
@@ -74,7 +79,13 @@ class PlanControllerTest {
         controller = new PlanController(
                 planAccessService, planRepository, planStepRepository,
                 planConfirmService, planStepExecutionService,
-                planPreviewService, planPreviewResponseMapper);
+                planPreviewService, planPreviewResponseMapper,
+                new RouteFeatureFlag(true));
+        disabledController = new PlanController(
+                planAccessService, planRepository, planStepRepository,
+                planConfirmService, planStepExecutionService,
+                planPreviewService, planPreviewResponseMapper,
+                new RouteFeatureFlag(false));
 
         userId = UUID.randomUUID();
         goalId = UUID.randomUUID();
@@ -211,7 +222,7 @@ class PlanControllerTest {
     void skipStepReturnsRedistribution() {
         when(planAccessService.requirePlanOwner(userId, planId)).thenReturn(plan);
         when(planStepExecutionService.skipStep(planId, 2, 10000.0))
-                .thenReturn(new SkipResult(2, 2500.0, 3750.0, 50.0, false, 7500.0, 2));
+                .thenReturn(new SkipResult(2, 2500.0, 3750.0, 50.0, 7500.0, 2));
 
         ApiResponse<StepSkipResponse> response = controller.skipStep(userId, planId.toString(), 2);
 
@@ -222,7 +233,6 @@ class PlanControllerTest {
         assertThat(response.data().achieveProb().before()).isZero();
         assertThat(response.data().achieveProb().after()).isZero();
         assertThat(response.data().consecutiveSkips()).isEqualTo(2);
-        assertThat(response.data().safeModeTriggered()).isFalse();
         assertThat(response.data().newPlanVersion()).isEqualTo(2);
     }
 
@@ -302,5 +312,71 @@ class PlanControllerTest {
         assertThatThrownBy(() -> controller.completeStep(userId, id, 1, request))
                 .isInstanceOf(NotFoundException.class);
         verifyNoInteractions(planStepExecutionService);
+    }
+    // ── Route 강등 (요구사항 v2 §4.12 미확정, 명세 v2 §6) ──────────────────
+    // route.enabled 기본값은 false 다. 확정되지 않은 수치(버킷 하한 · 분할 회차 ·
+    // 몬테카를로 · 달성 확률)가 API 로 새어 나가지 않도록 6개 전부 501 로 막고,
+    // 소유자 검증·계산 서비스에 진입조차 하지 않는다.
+
+    @Test
+    @DisplayName("route.enabled=false 면 preview 는 501 이고 계산에 진입하지 않는다")
+    void previewReturns501WhenRouteDisabled() {
+        PlanPreviewRequest request = new PlanPreviewRequest(goalId.toString(), 100000L, 0.8, 4);
+
+        assertThatThrownBy(() -> disabledController.preview(userId, request))
+                .isInstanceOf(NotImplementedException.class);
+        verifyNoInteractions(planAccessService, planPreviewService, planPreviewResponseMapper);
+    }
+
+    @Test
+    @DisplayName("route.enabled=false 면 createPlan 은 501 이고 계획을 저장하지 않는다")
+    void createPlanReturns501WhenRouteDisabled() {
+        String id = goalId.toString();
+        PlanCreateRequest request = new PlanCreateRequest(100000L, 0.8, 4);
+
+        assertThatThrownBy(() -> disabledController.createPlan(userId, id, request))
+                .isInstanceOf(NotImplementedException.class);
+        verifyNoInteractions(planAccessService, planConfirmService, planStepRepository);
+    }
+
+    @Test
+    @DisplayName("route.enabled=false 면 listPlanVersions 는 501 이다")
+    void listPlanVersionsReturns501WhenRouteDisabled() {
+        String id = goalId.toString();
+
+        assertThatThrownBy(() -> disabledController.listPlanVersions(userId, id))
+                .isInstanceOf(NotImplementedException.class);
+        verifyNoInteractions(planAccessService, planRepository);
+    }
+
+    @Test
+    @DisplayName("route.enabled=false 면 getActivePlan 은 501 이다")
+    void getActivePlanReturns501WhenRouteDisabled() {
+        String id = goalId.toString();
+
+        assertThatThrownBy(() -> disabledController.getActivePlan(userId, id))
+                .isInstanceOf(NotImplementedException.class);
+        verifyNoInteractions(planAccessService, planRepository);
+    }
+
+    @Test
+    @DisplayName("route.enabled=false 면 completeStep 은 501 이고 회차를 완료하지 않는다")
+    void completeStepReturns501WhenRouteDisabled() {
+        String id = planId.toString();
+        StepCompleteRequest request = new StepCompleteRequest(2500.0, 1350.0);
+
+        assertThatThrownBy(() -> disabledController.completeStep(userId, id, 1, request))
+                .isInstanceOf(NotImplementedException.class);
+        verifyNoInteractions(planAccessService, planStepExecutionService);
+    }
+
+    @Test
+    @DisplayName("route.enabled=false 면 skipStep 은 501 이고 재분배를 계산하지 않는다")
+    void skipStepReturns501WhenRouteDisabled() {
+        String id = planId.toString();
+
+        assertThatThrownBy(() -> disabledController.skipStep(userId, id, 2))
+                .isInstanceOf(NotImplementedException.class);
+        verifyNoInteractions(planAccessService, planStepExecutionService);
     }
 }

@@ -5,130 +5,69 @@ import static org.assertj.core.api.Assertions.assertThat;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link NarrativeFilter} 위험 표현 마스킹 테스트 (NFR-AI-03).
- * 단정적 방향 표현과 투자 권유 표현을 *** 로 마스킹한다.
+ * {@link NarrativeFilter} 금지 표현 탐지 테스트 (FR-AI-07, NFR-RG-01).
+ * v1 은 {@code ***} 마스킹이라 훼손 문장이 그대로 나갔다(리뷰 B M1) — 이제는 탐지만 하고,
+ * {@link AiService} 가 발견 시 응답 전체를 폴백으로 바꾼다.
  */
 class NarrativeFilterTest {
 
     private final NarrativeFilter filter = new NarrativeFilter();
 
     @Test
-    void filter_단정적_표현_확실히_를_마스킹한다() {
-        String narrative = "주식은 확실히 오를 것입니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***").doesNotContain("확실히");
+    void detect_단정적_표현_확실히를_찾는다() {
+        assertThat(filter.detect("주식은 확실히 오를 것입니다.")).contains("확실히");
     }
 
     @Test
-    void filter_단정적_표현_반드시를_마스킹한다() {
-        String narrative = "달러는 반드시 강세를 보일 것입니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***").doesNotContain("반드시");
+    void detect_단정적_표현_반드시를_찾는다() {
+        assertThat(filter.detect("달러는 반드시 강세를 보일 것입니다.")).contains("반드시");
     }
 
     @Test
-    void filter_단정적_표현_틀림없이를_마스킹한다() {
-        String narrative = "이 투자는 틀림없이 성공할 것입니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***").doesNotContain("틀림없이");
+    void detect_단정적_표현_틀림없이를_찾는다() {
+        assertThat(filter.detect("이 투자는 틀림없이 성공할 것입니다.")).contains("틀림없이");
     }
 
     @Test
-    void filter_투자_권유_표현_매수를_마스킹한다() {
-        String narrative = "지금 당신이 매수해야 할 시점입니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***").doesNotContain("매수");
+    void detect_완결된_매수_지시_표현을_찾는다() {
+        assertThat(filter.detect("이 자산을 매수하세요.")).contains("매수하세요");
     }
 
     @Test
-    void filter_투자_권유_표현_추천을_마스킹한다() {
-        String narrative = "이 자산을 강력히 추천합니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***").doesNotContain("추천");
+    void detect_수익_보장_표현을_찾는다() {
+        assertThat(filter.detect("이 상품은 수익을 보장합니다.")).isNotEmpty();
     }
 
     @Test
-    void filter_투자_권유_표현_투자하세요를_마스킹한다() {
-        String narrative = "지금 바로 투자하세요.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***").doesNotContain("투자하");
+    void detect_안전한_표현은_찾지_않는다() {
+        assertThat(filter.detect("포트폴리오의 분산 정도가 중간 수준입니다.")).isEmpty();
     }
 
     @Test
-    void filter_안전한_표현은_마스킹하지_않는다() {
-        String narrative = "포트폴리오의 분산 정도가 중간 수준입니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).isEqualTo(narrative);
+    void detect_투자하지_않는다는_오탐하지_않는다() {
+        // 리뷰 B M1 — v1 의 "투자하" 단일 형태소 매칭은 부정문까지 잡았다.
+        assertThat(filter.detect("이 자산에는 투자하지 않는 것을 권합니다.")).isEmpty();
     }
 
     @Test
-    void filter_null_narrative이면_null을_반환한다() {
-        String result = filter.filter(null);
-
-        assertThat(result).isNull();
+    void detect_추천이라는_단어_자체는_오탐하지_않는다() {
+        // 리뷰 B M1 — "추천" 단일 단어는 더 이상 패턴이 아니다. "매수를 추천" 처럼 완결된 형태만 잡는다.
+        assertThat(filter.detect("여러 통화에 나눠 담는 분산이 추천되는 방식입니다.")).isEmpty();
     }
 
     @Test
-    void filter_blank_narrative이면_blank를_반환한다() {
-        String result = filter.filter("   ");
-
-        assertThat(result).isEqualTo("   ");
+    void detect_null_텍스트는_빈_목록을_반환한다() {
+        assertThat(filter.detect(null)).isEmpty();
     }
 
     @Test
-    void filter_여러_위험_표현을_한번에_마스킹한다() {
-        String narrative = "반드시 추천하며 확실히 성공할 것입니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***");
-        assertThat(result).doesNotContain("반드시");
-        assertThat(result).doesNotContain("추천");
-        assertThat(result).doesNotContain("확실히");
+    void detect_blank_텍스트는_빈_목록을_반환한다() {
+        assertThat(filter.detect("   ")).isEmpty();
     }
 
     @Test
-    void filter_대소문자_무시하고_마스킹한다() {
-        String narrative = "주식은 CONFIRM 상승할 것입니다.";
-        // 표현 필터의 정규식이 CASE_INSENSITIVE 이므로 대문자도 처리됨
-        // 다만 CONFIRM 은 패턴에 없으므로 마스킹되지 않음
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).isEqualTo(narrative);
-    }
-
-    @Test
-    void filter_문장_중간의_표현도_마스킹한다() {
-        String narrative = "현재 상황을 보면 반드시 투자 기회가 있습니다.";
-
-        String result = filter.filter(narrative);
-
-        assertThat(result).contains("***");
-        assertThat(result).doesNotContain("반드시");
-    }
-
-    @Test
-    void filter_마스킹된_부분을_asterisk_3개로_표시한다() {
-        String narrative = "이것은 매우 확실한 투자입니다.";
-
-        String result = filter.filter(narrative);
-
-        // 두 번의 마스킹이 일어남: 확실한 → *** , 투자 → ***
-        assertThat(result).contains("***");
+    void detect_여러_금지_표현을_모두_찾되_중복은_제거한다() {
+        assertThat(filter.detect("반드시 매수하세요. 반드시 그렇습니다."))
+                .containsExactly("반드시", "매수하세요");
     }
 }

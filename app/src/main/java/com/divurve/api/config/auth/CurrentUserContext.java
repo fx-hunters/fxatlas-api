@@ -27,6 +27,14 @@ public final class CurrentUserContext {
         return Optional.ofNullable(HOLDER.get());
     }
 
+    /**
+     * 현재 요청 주체가 데모(둘러보기) 계정인지 조회한다. 미인증 요청이면 {@code false}.
+     * 응답 메타의 {@code is_demo}(명세 §1.1, FR-IS-09)를 채우는 단일 근거다.
+     */
+    public static boolean isDemo() {
+        return get().map(AuthPrincipal::isDemo).orElse(false);
+    }
+
     /** ThreadLocal 을 비운다. 스레드 풀 재사용 시 컨텍스트 누수를 막기 위해 요청 종료마다 호출한다. */
     public static void clear() {
         HOLDER.remove();

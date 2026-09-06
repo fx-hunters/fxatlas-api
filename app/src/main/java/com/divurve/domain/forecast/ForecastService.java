@@ -1,270 +1,490 @@
 package com.divurve.domain.forecast;
 
 import com.divurve.common.architecture.UseCase;
+import com.divurve.common.exception.InvalidRequestException;
+import com.divurve.domain.holding.DepositRepository;
+import com.divurve.domain.holding.HoldingRepository;
+import com.divurve.domain.holding.entity.Deposit;
+import com.divurve.domain.holding.entity.Holding;
 import com.divurve.domain.port.EconomicEventProvider;
 import com.divurve.domain.port.FxRateHistoryProvider;
 import com.divurve.domain.port.FxRateProvider;
-import com.divurve.domain.port.MacroIndicatorProvider;
 import com.divurve.engine.forecast.FanChartCalculator;
-import com.divurve.engine.forecast.GbmSimulator;
 import com.divurve.engine.forecast.ModelPerformanceCalculator;
-import com.divurve.engine.forecast.TriangulationCalculator;
 import com.divurve.engine.forecast.VolatilityCalculator;
+import com.divurve.engine.volatility.Regime;
+import com.divurve.engine.volatility.RegimeClassifier;
+import com.divurve.engine.weight.QuoteUnitNormalizer;
+import java.math.BigDecimal;
+import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.UUID;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
- * 환율 범위 전망 UseCase (명세 2·3.5~3.6).
+ * 환율 예측 범위 UseCase (명세 v2 §5.7·§5.8, 요구사항 §4.5 FR-FC-01~12).
  *
- * <p>팬차트, 전망 동인, 모델 성적표, 경제 일정 조회를 담당한다.
- * engine 계산 함수들을 조율하고, 외부 어댑터들로부터 데이터를 받아
- * 응답 DTO로 변환한다.
+ * <h2>🔒 L1 / L2 경계 — FR-FC-12</h2>
+ * <ul>
+ *   <li><b>L1 (계산 입력 가능)</b>: {@code baseRate} · {@code band} · {@code volatility}.
+ *       이 값들만 다른 계산(Route·계획)의 입력이 될 수 있다.</li>
+ *   <li><b>L2 (표시 전용)</b>: {@code modelPath} · {@code /forecast/factors}.
+ *       <b>이 서비스는 두 값을 어떤 계산에도 넘기지 않는다.</b> {@code RouteContext} 계약에서도
+ *       의도적으로 빠져 있다. 방향 전망이 계획 계산에 새어 들어가는 경로를 만들지 않기 위해서다.</li>
+ * </ul>
+ * 방향 확률 필드는 두지 않는다 — 요구사항 §2.2 가 "지금 사라·팔라 형태의 지시"를 금지한다.
  *
- * <p>주요 책임:
- * - GBM 시뮬레이션으로 팬차트 생성 (FR-FC-01/02)
- * - 변동성 지표 계산 (FR-FC-03/04)
- * - 모델 성적표 생성 (FR-FC-08)
- * - 전망 동인 조회 (FR-FC-06)
- * - 경제 이벤트 조회 (FR-FC-09)
- * - 삼각 무차익으로 추가 통화 유도 (FR-FC-09)
+ * <h2>구간은 시뮬레이션이 아니라 해석적 계산이다 (calc)</h2>
+ * v1 은 {@code GbmSimulator} 로 1,000 경로를 뽑아 분위수를 셌다. 같은 입력에도 시드·경로 수에 따라
+ * 구간이 흔들려 {@code /forecast} 와 {@code /forecast/model-performance} 의 수치가 서로 맞지 않았다.
+ * 이제 드리프트 0 로그정규의 <b>닫힌 해</b>({@link FanChartCalculator#analyticInterval})를 쓴다 —
+ * 같은 입력이면 항상 같은 구간이고, {@code interval_80} 은 정확히 {@code band} 의 마지막 점이다.
  */
 @UseCase
 public class ForecastService {
 
-    private static final int NUM_SIMULATION_PATHS = 1000;
-    private static final long SIMULATION_SEED = 42L;
-    private static final int HISTORY_WINDOW_YEARS = 5;
-    private static final int HISTORY_WINDOW_DAYS = HISTORY_WINDOW_YEARS * 252;
+    /** 예측 모델 버전 ({@code meta.model_version}, FR-FC-11). 드리프트 0 로그정규 구간 모델. */
+    public static final String MODEL_VERSION = "fc-2026.09.1-drift0-lognormal";
+
+    /** 기본 지평 (FR-FC-02). */
+    public static final int DEFAULT_HORIZON_DAYS = 30;
+
+    /** 허용 지평 (FR-FC-02). */
+    private static final List<Integer> ALLOWED_HORIZON_DAYS = List.of(30, 90);
+
+    /** 응답 {@code history} 로 내려보낼 최근 관측 수. */
+    private static final int HISTORY_POINTS = 90;
+
+    /** 5년 백분위 계산에 필요한 관측 구간(영업일) + 30일 롤링 윈도. */
+    private static final int HISTORY_WINDOW_DAYS = 5 * 252 + 30;
+
+    /** 워크포워드 검증 폴드 수 (명세 §5.8 예시와 같은 24개월). */
+    private static final int VALIDATION_FOLDS = 24;
+
+    /** 폴드 간격 — 영업일 기준 약 1개월. */
+    private static final int FOLD_STEP_DAYS = 21;
+
+    /** 검증 방법 코드 (명세 §5.8). */
+    private static final String VALIDATION_METHOD = "rolling_walk_forward";
+
+    /** 명세 §5.7 {@code labels.band}. 음영을 "변동성"이라 부르지 않는다(FR-FC-04·05). */
+    public static final String LABEL_BAND = "예측 범위 / 불확실성 구간";
+
+    /** 명세 §5.7 {@code labels.model_path}. */
+    public static final String LABEL_MODEL_PATH = "모델의 참고 중심 경로";
+
+    /** 명세 §5.7 {@code disclaimer}. */
+    public static final String DISCLAIMER = "예상 구간은 보장 범위가 아니며 투자 권유가 아닙니다.";
+
+    /** 명세 §5.8 {@code note}. 포함률은 폭과 함께 봐야 한다(FR-FC-11). */
+    public static final String PERFORMANCE_NOTE =
+            "구간 포함률은 구간을 넓히면 쉽게 오르므로 평균 구간 폭과 함께 봐야 합니다.";
 
     private final FxRateProvider fxRateProvider;
     private final FxRateHistoryProvider historyProvider;
-    private final MacroIndicatorProvider macroProvider;
     private final EconomicEventProvider eventProvider;
+    private final HoldingRepository holdingRepository;
+    private final DepositRepository depositRepository;
+    private final RegimeClassifier regimeClassifier;
+    private final QuoteUnitNormalizer quoteUnitNormalizer;
+    private final Clock clock;
 
     public ForecastService(
-        FxRateProvider fxRateProvider,
-        FxRateHistoryProvider historyProvider,
-        MacroIndicatorProvider macroProvider,
-        EconomicEventProvider eventProvider
-    ) {
-        this.fxRateProvider = Objects.requireNonNull(fxRateProvider);
-        this.historyProvider = Objects.requireNonNull(historyProvider);
-        this.macroProvider = Objects.requireNonNull(macroProvider);
-        this.eventProvider = Objects.requireNonNull(eventProvider);
+            FxRateProvider fxRateProvider,
+            FxRateHistoryProvider historyProvider,
+            EconomicEventProvider eventProvider,
+            HoldingRepository holdingRepository,
+            DepositRepository depositRepository,
+            RegimeClassifier regimeClassifier,
+            QuoteUnitNormalizer quoteUnitNormalizer,
+            Clock clock) {
+        this.fxRateProvider = Objects.requireNonNull(fxRateProvider, "fxRateProvider");
+        this.historyProvider = Objects.requireNonNull(historyProvider, "historyProvider");
+        this.eventProvider = Objects.requireNonNull(eventProvider, "eventProvider");
+        this.holdingRepository = Objects.requireNonNull(holdingRepository, "holdingRepository");
+        this.depositRepository = Objects.requireNonNull(depositRepository, "depositRepository");
+        this.regimeClassifier = Objects.requireNonNull(regimeClassifier, "regimeClassifier");
+        this.quoteUnitNormalizer = Objects.requireNonNull(quoteUnitNormalizer, "quoteUnitNormalizer");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /**
-     * 팬차트·구간·변동성 조회.
+     * 예측 범위·변동성·내 자산 영향 조회 ({@code GET /forecast}).
      *
-     * <p>engine 계산 결과를 API 응답에 적합한 DTO로 변환한다.
-     *
-     * @param pairCode 통화쌍 (USD_KRW, USD_JPY, EUR_USD 등)
-     * @param horizonDays 미래 지평 (30 또는 90)
-     * @return 팬차트 데이터 (DTO 형태)
+     * @param userId      조회 사용자 (자산 영향 계산용)
+     * @param rawPairCode {@code pair_code} 원본 값 ({@code USDKRW} 또는 {@code USD_KRW})
+     * @param horizonDays 지평 (30 또는 90)
+     * @return 예측 범위 데이터
+     * @throws InvalidRequestException 통화쌍 표기나 지평이 허용 범위를 벗어난 경우
      */
-    public ForecastData getForecast(String pairCode, int horizonDays) {
-        Objects.requireNonNull(pairCode, "pairCode must not be null");
+    @Transactional(readOnly = true)
+    public ForecastView getForecast(UUID userId, String rawPairCode, int horizonDays) {
+        Objects.requireNonNull(userId, "userId");
+        PairCode pair = PairCode.parse(rawPairCode);
         validateHorizon(horizonDays);
 
-        // 1. 현재 환율 조회
-        double currentRate = fxRateProvider.fetchLatest(pairCode).rate().doubleValue();
-
-        // 2. 과거 환율 조회 (변동성·모델 성적표 계산용)
         List<FxRateHistoryProvider.HistoryRateSnapshot> history =
-            historyProvider.fetchHistorical(pairCode, LocalDate.now(), HISTORY_WINDOW_DAYS + 30);
+                historyProvider.fetchHistorical(pair.providerCode(), LocalDate.now(clock), HISTORY_WINDOW_DAYS);
+        List<Double> dailyReturns = toDailyReturns(history);
 
-        // 3. 일별 수익률 계산
-        List<Double> dailyReturns = calculateDailyReturns(history);
+        double vol30d = realized30d(dailyReturns);
+        double volPercentile5y = percentile5y(dailyReturns);
+        Regime regime = regimeClassifier.classify(volPercentile5y);
 
-        // 4. 변동성 지표
-        double realized30d = VolatilityCalculator.calculateRealized30d(dailyReturns);
-        int percentile5y = VolatilityCalculator.calculatePercentile5y(dailyReturns);
-        String regime = VolatilityCalculator.classifyRegime(percentile5y);
+        double currentRate = fxRateProvider.fetchLatest(pair.providerCode()).rate().doubleValue();
+        // 드리프트 0 이므로 기준선(계산에 쓰이는 유일한 중앙값)은 현재 환율과 같다 — L1.
+        double baseRate = currentRate;
+        // 관측이 비어 있으면 위 변동성 계산에서 이미 400 이 나갔으므로 여기서는 마지막 관측이 반드시 있다.
+        LocalDate baseDate = history.get(history.size() - 1).date();
 
-        // 5. GBM 시뮬레이션 (팬차트 생성)
-        GbmSimulator simulator = new GbmSimulator(SIMULATION_SEED);
-        List<List<Double>> paths = simulator.simulate(
-            currentRate,
-            0.0, // 드리프트 0 (FRED 데이터로 추정 가능하지만 여기서는 중립)
-            realized30d,
-            horizonDays,
-            NUM_SIMULATION_PATHS
-        );
+        List<BandPoint> band = new ArrayList<>(horizonDays);
+        for (int day = 1; day <= horizonDays; day++) {
+            FanChartCalculator.PathPoint point = FanChartCalculator.analyticInterval(baseRate, vol30d, day);
+            band.add(new BandPoint(
+                    baseDate.plusDays(day),
+                    point.p50Lo(), point.p50Hi(), point.p80Lo(), point.p80Hi()));
+        }
+        BandPoint last = band.get(band.size() - 1);
 
-        // 6. 경로 포인트 생성 (engine → domain DTO 변환)
-        List<FanChartCalculator.PathPoint> enginePathPoints = FanChartCalculator.generatePaths(paths);
-        List<ForecastData.PathPoint> dtoPathPoints = enginePathPoints.stream()
-            .map(p -> new ForecastData.PathPoint("", p.p50Lo(), p.p50Hi(), p.p80Lo(), p.p80Hi()))
-            .toList();
+        // 🔒 L2 — 표시 전용. 드리프트가 0 이므로 중심 경로는 기준선과 같다. 이 값은 아래 어떤 계산에도
+        //    입력되지 않으며 RouteContext 계약에도 포함되지 않는다(FR-FC-12).
+        List<ModelPathPoint> modelPath = band.stream()
+                .map(point -> new ModelPathPoint(point.date(), baseRate))
+                .toList();
 
-        // 7. 기준선 (드리프트 0)
-        List<Double> baseline = FanChartCalculator.generateBaseLine(currentRate, horizonDays);
+        long assetKrw = exposureKrw(userId, pair.base());
+        long per1pctKrw = Math.round(assetKrw * 0.01);
 
-        // 팬차트 데이터 구성
-        return new ForecastData(
-            pairCode,
-            horizonDays,
-            currentRate,
-            baseline,
-            history,
-            dtoPathPoints,
-            realized30d,
-            percentile5y,
-            regime
-        );
+        return new ForecastView(
+                pair.canonical(),
+                horizonDays,
+                baseDate,
+                currentRate,
+                baseRate,
+                tailHistory(history),
+                band,
+                modelPath,
+                new IntervalView(last.p80Lo(), last.p80Hi(), (last.p80Hi() - last.p80Lo()) / baseRate),
+                new VolatilityView(vol30d, volPercentile5y, regime.code()),
+                new UserImpactView(per1pctKrw, assetKrw),
+                new LabelsView(LABEL_BAND, LABEL_MODEL_PATH),
+                new ModelInfoView(
+                        List.of(0.50, 0.80),
+                        "드리프트 0 기준선에 %d일 변동성을 적용한 구간입니다.".formatted(horizonDays),
+                        "실제 환율은 구간을 벗어날 수 있으며 급변 시 오차가 확대됩니다."),
+                uncertaintyNote(pair.canonical(), volPercentile5y, regime),
+                DISCLAIMER);
     }
 
     /**
-     * 전망 동인 조회 (참고용, 계산에 입력되지 않음).
+     * 모델 성적표 조회 ({@code GET /forecast/model-performance}, FR-FC-11).
      *
-     * @param pairCode 통화쌍
-     * @return 상위 3개 동인
-     */
-    public List<ForecastFactor> getFactors(String pairCode) {
-        Objects.requireNonNull(pairCode, "pairCode must not be null");
-
-        // TODO: 실제 모델 성적표와 함께 제공되는 동인 데이터 통합
-        // 지금은 목형 데이터 반환
-        return List.of(
-            new ForecastFactor("fed_rate", "Federal Reserve Rate", 0.35, "Bullish"),
-            new ForecastFactor("risk_sentiment", "Global Risk Sentiment", -0.25, "Bearish"),
-            new ForecastFactor("gdp_growth", "GDP Growth Differential", 0.15, "Neutral")
-        );
-    }
-
-    /**
-     * 모델 성적표 조회.
+     * <p>실제 과거 관측으로 <b>롤링 워크포워드</b> 검증을 돌린다. 각 폴드의 기준값은 그 시점까지의
+     * 실측값이라 미래 누출이 없다({@code leakage_guard}). 하드코딩된 목값을 쓰지 않는다.
      *
-     * @param pairCode 통화쌍
-     * @param horizonDays 미래 지평
-     * @return 모델 성적 지표
+     * <p>이 서비스의 기준 모델은 드리프트 0 이라 점예측이 랜덤워크와 <b>같다</b>. 그래서
+     * {@code rw_improvement} 는 0 이고 방향 적중률도 낮게 나온다 — 숨기지 않고 그대로 보여준다(명세 §5.8).
+     *
+     * @param rawPairCode {@code pair_code}
+     * @param horizonDays 지평 (30 또는 90)
+     * @return 성적표
+     * @throws InvalidRequestException 표기·지평 오류, 또는 검증할 관측이 모자란 경우
      */
-    public ModelPerformanceData getModelPerformance(String pairCode, int horizonDays) {
-        Objects.requireNonNull(pairCode, "pairCode must not be null");
+    @Transactional(readOnly = true)
+    public ModelPerformanceView getModelPerformance(String rawPairCode, int horizonDays) {
+        PairCode pair = PairCode.parse(rawPairCode);
         validateHorizon(horizonDays);
 
-        // TODO: 실제 검증 데이터셋 기반 성적표 계산
-        // 지금은 목형 데이터 반환
-        return new ModelPerformanceData(
-            pairCode,
-            horizonDays,
-            0.62, // hitRate
-            15.5, // mae
-            0.78, // coverage80
-            45.3, // avgWidth
-            0.48, // rwHitRate
-            18.2  // rwMae
-        );
-    }
+        List<FxRateHistoryProvider.HistoryRateSnapshot> history =
+                historyProvider.fetchHistorical(pair.providerCode(), LocalDate.now(clock), HISTORY_WINDOW_DAYS);
+        List<Double> dailyReturns = toDailyReturns(history);
 
-    /**
-     * 경제 이벤트 조회.
-     *
-     * @return 향후 경제 이벤트들
-     */
-    public List<EconomicEventData> getEvents() {
-        List<EconomicEventProvider.EconomicEvent> events =
-            eventProvider.fetchUpcoming(LocalDate.now(), 90);
+        List<Double> baseRates = new ArrayList<>();
+        List<Double> forecastRates = new ArrayList<>();
+        List<Double> actualRates = new ArrayList<>();
+        List<Double> lowerBounds = new ArrayList<>();
+        List<Double> upperBounds = new ArrayList<>();
 
-        return events.stream()
-            .map(e -> new EconomicEventData(
-                e.date().toString(),
-                e.title(),
-                e.currencyCode(),
-                e.importance()
-            ))
-            .toList();
-    }
+        // 최신 폴드부터 과거로 한 달씩 물러나며 평가한다. 각 폴드는 t 시점의 정보만 쓴다.
+        for (int fold = 0; fold < VALIDATION_FOLDS; fold++) {
+            int actualIndex = history.size() - 1 - fold * FOLD_STEP_DAYS;
+            int baseIndex = actualIndex - horizonDays;
+            if (baseIndex < VolatilityCalculator.REALIZED_30D_WINDOW) {
+                break;
+            }
+            double base = history.get(baseIndex).rate();
+            double actual = history.get(actualIndex).rate();
+            // t 시점까지의 수익률만 쓴다 — 미래 누출 방지(NFR-DT-01).
+            double volAtBase = VolatilityCalculator.calculateRealized30d(
+                    dailyReturns.subList(0, baseIndex));
+            FanChartCalculator.PathPoint interval =
+                    FanChartCalculator.analyticInterval(base, volAtBase, horizonDays);
 
-    /**
-     * 삼각 무차익으로 추가 통화 환율 유도.
-     *
-     * @param baseRates 기본 환율들 (USD_KRW, USD_JPY, EUR_USD)
-     * @return 확장된 환율 맵
-     */
-    public Map<String, Double> extendRatesByTriangulation(Map<String, Double> baseRates) {
-        return TriangulationCalculator.triangulateRates(baseRates);
-    }
-
-    private List<Double> calculateDailyReturns(List<FxRateHistoryProvider.HistoryRateSnapshot> history) {
-        if (history == null || history.size() < 2) {
-            return new ArrayList<>();
+            baseRates.add(base);
+            // 드리프트 0 기준선의 점예측은 기준값 그 자체다.
+            forecastRates.add(base);
+            actualRates.add(actual);
+            lowerBounds.add(interval.p80Lo());
+            upperBounds.add(interval.p80Hi());
         }
 
-        List<Double> returns = new ArrayList<>();
+        if (baseRates.isEmpty()) {
+            throw new InvalidRequestException(
+                    "성적표를 계산할 과거 관측이 부족합니다 (필요 지평 %d일).".formatted(horizonDays), "horizon_days");
+        }
+
+        double modelHitRate = ModelPerformanceCalculator.calculateHitRate(baseRates, forecastRates, actualRates);
+        double modelMae = ModelPerformanceCalculator.calculateMaeRatio(forecastRates, actualRates);
+        double coverage80 = ModelPerformanceCalculator.calculateCoverage80(lowerBounds, upperBounds, actualRates);
+        double avgWidth = ModelPerformanceCalculator.calculateAvgWidthRatio(lowerBounds, upperBounds, baseRates);
+        ModelPerformanceCalculator.RandomWalkMetrics randomWalk =
+                ModelPerformanceCalculator.calculateRandomWalkBenchmark(baseRates, actualRates);
+        double improvement = ModelPerformanceCalculator.calculateImprovement(modelMae, randomWalk.mae());
+
+        LocalDate evaluatedAt = history.get(history.size() - 1).date();
+
+        return new ModelPerformanceView(
+                pair.canonical(),
+                horizonDays,
+                new ModelMetricsView(modelHitRate, modelMae, coverage80, avgWidth),
+                new RandomWalkMetricsView(randomWalk.hitRate(), randomWalk.mae()),
+                improvement,
+                new ValidationView(VALIDATION_METHOD, baseRates.size(), true),
+                PERFORMANCE_NOTE,
+                evaluatedAt.atStartOfDay().toInstant(ZoneOffset.UTC));
+    }
+
+    /**
+     * 전망 동인 조회 ({@code GET /forecast/factors}).
+     *
+     * <p>🔒 <b>L2 — 표시 전용이다.</b> 반환값은 어떤 계산에도 입력되지 않으며 RouteContext 에도
+     * 실리지 않는다(FR-FC-12). 값의 출처가 확정될 때까지 빈 목록이다 — 없는 근거를 만들지 않는다(FR-CM-10).
+     *
+     * @param rawPairCode {@code pair_code}
+     * @return 동인 목록 (현재는 비어 있다)
+     */
+    public FactorsView getFactors(String rawPairCode) {
+        return new FactorsView(PairCode.parse(rawPairCode).canonical());
+    }
+
+    /**
+     * 경제 일정 조회 ({@code GET /events}).
+     *
+     * @return 향후 90일 이벤트
+     */
+    public List<EconomicEventView> getEvents() {
+        return eventProvider.fetchUpcoming(LocalDate.now(clock), 90).stream()
+                .map(event -> new EconomicEventView(
+                        event.date(), event.title(), event.currencyCode(), event.importance()))
+                .toList();
+    }
+
+    // ── 내부 계산 ────────────────────────────────────────────────
+
+    private void validateHorizon(int horizonDays) {
+        if (!ALLOWED_HORIZON_DAYS.contains(horizonDays)) {
+            throw new InvalidRequestException(
+                    "horizon_days 는 30 또는 90 이어야 합니다 (입력 %d).".formatted(horizonDays), "horizon_days");
+        }
+    }
+
+    private static double realized30d(List<Double> dailyReturns) {
+        try {
+            return VolatilityCalculator.calculateRealized30d(dailyReturns);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRequestException("변동성을 계산할 과거 관측이 부족합니다.", "pair_code");
+        }
+    }
+
+    private static double percentile5y(List<Double> dailyReturns) {
+        try {
+            return VolatilityCalculator.calculatePercentile5y(dailyReturns);
+        } catch (IllegalArgumentException e) {
+            throw new InvalidRequestException("5년 변동성 백분위를 계산할 과거 관측이 부족합니다.", "pair_code");
+        }
+    }
+
+    private static String uncertaintyNote(String pairCode, double volPercentile5y, Regime regime) {
+        if (regime == Regime.CALM || regime == Regime.NORMAL) {
+            return "%s 변동성은 5년 분포의 평시 범위여서 예측 범위가 평소 수준입니다."
+                    .formatted(pairCode);
+        }
+        return "%s 현재 변동성이 5년 상위 %.0f%% 구간이어서 예측 범위가 평시보다 넓습니다."
+                .formatted(pairCode, (1.0 - volPercentile5y) * 100);
+    }
+
+    private static List<Double> toDailyReturns(List<FxRateHistoryProvider.HistoryRateSnapshot> history) {
+        if (history == null || history.size() < 2) {
+            return List.of();
+        }
+        List<Double> returns = new ArrayList<>(history.size() - 1);
         for (int i = 1; i < history.size(); i++) {
-            double prevRate = history.get(i - 1).rate();
-            double currRate = history.get(i).rate();
-            double ret = Math.log(currRate / prevRate);
-            returns.add(ret);
+            returns.add(Math.log(history.get(i).rate() / history.get(i - 1).rate()));
         }
         return returns;
     }
 
-    private void validateHorizon(int horizonDays) {
-        if (horizonDays != 30 && horizonDays != 90) {
-            throw new IllegalArgumentException("horizonDays must be 30 or 90");
+    private static List<HistoryPoint> tailHistory(List<FxRateHistoryProvider.HistoryRateSnapshot> history) {
+        int from = Math.max(0, history.size() - HISTORY_POINTS);
+        return history.subList(from, history.size()).stream()
+                .map(snapshot -> new HistoryPoint(snapshot.date(), snapshot.rate()))
+                .toList();
+    }
+
+    /**
+     * 해당 통화의 사용자 노출액(원화 환산). {@code user_impact.asset_krw} 의 근거다.
+     *
+     * <p>명세 §4 fixture 검산: USD 노출 15,790,000 → {@code per_1pct_krw} 157,900.
+     * 고시 단위가 100단위인 통화(JPY)는 {@link QuoteUnitNormalizer} 로 1단위 환율로 정규화한다.
+     */
+    private long exposureKrw(UUID userId, String currencyCode) {
+        List<Holding> holdings = holdingRepository.findByOwner_Id(userId).stream()
+                .filter(holding -> currencyCode.equals(holding.getCurrencyCode()))
+                .toList();
+        List<Deposit> deposits = depositRepository.findByOwner_Id(userId).stream()
+                .filter(deposit -> currencyCode.equals(deposit.getCurrencyCode()))
+                .toList();
+        if (holdings.isEmpty() && deposits.isEmpty()) {
+            return 0L;
         }
-    }
 
-    // ── DTO들 ────────────────────────────────────
-
-    /**
-     * 팬차트 데이터 (API 응답용 DTO).
-     * engine 계산 결과를 API 레이어에 적합한 형태로 변환한 결과.
-     */
-    public record ForecastData(
-        String pairCode,
-        int horizonDays,
-        double currentRate,
-        List<Double> baseline,
-        List<FxRateHistoryProvider.HistoryRateSnapshot> history,
-        List<PathPoint> pathPoints,
-        double realized30d,
-        int percentile5y,
-        String regime
-    ) {
-        /**
-         * 팬차트 경로 포인트 (engine과 독립적인 DTO).
-         */
-        public record PathPoint(
-            String date,
-            double p50Lo,
-            double p50Hi,
-            double p80Lo,
-            double p80Hi
-        ) {
+        Map<String, BigDecimal> rateCache = new HashMap<>();
+        long total = 0L;
+        for (Holding holding : holdings) {
+            total += BigDecimal.valueOf(holding.getQuantity() * holding.getAvgPrice())
+                    .multiply(perUnitRate(rateCache, currencyCode))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValue();
         }
+        for (Deposit deposit : deposits) {
+            total += deposit.getAmount()
+                    .multiply(perUnitRate(rateCache, currencyCode))
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValue();
+        }
+        return total;
     }
 
-    /**
-     * 전망 동인.
-     */
-    public record ForecastFactor(String key, String label, double contribution, String direction) {
+    private BigDecimal perUnitRate(Map<String, BigDecimal> cache, String currencyCode) {
+        return cache.computeIfAbsent(currencyCode, code -> quoteUnitNormalizer.toPerUnitRate(
+                code, fxRateProvider.fetchLatest(code + "_KRW").rate()));
     }
 
+    // ── 도메인 뷰 ────────────────────────────────────────────────
+
     /**
-     * 모델 성적 데이터.
+     * 예측 범위 응답 (명세 §5.7).
+     *
+     * @param pairCode        통화쌍 (명세 표기)
+     * @param horizonDays     지평
+     * @param baseDate        계산 기준일
+     * @param currentRate     현재 환율
+     * @param baseRate        기준선 (L1 — 계산에 쓰이는 유일한 중앙값)
+     * @param history         최근 관측
+     * @param band            예측 범위 (L1)
+     * @param modelPath       모델 참고 중심 경로 (L2 — 표시 전용)
+     * @param interval80      지평 끝 80퍼센트 구간
+     * @param volatility      변동성 지표 (L1)
+     * @param userImpact      1퍼센트 변동 시 내 자산 영향
+     * @param labels          음영·경로의 표시 라벨
+     * @param modelInfo       구간 수준·가정·한계
+     * @param uncertaintyNote 불확실성 안내
+     * @param disclaimer      고지
      */
-    public record ModelPerformanceData(
-        String pairCode,
-        int horizonDays,
-        double modelHitRate,
-        double modelMae,
-        double coverage80,
-        double avgWidth,
-        double rwHitRate,
-        double rwMae
+    public record ForecastView(
+            String pairCode,
+            int horizonDays,
+            LocalDate baseDate,
+            double currentRate,
+            double baseRate,
+            List<HistoryPoint> history,
+            List<BandPoint> band,
+            List<ModelPathPoint> modelPath,
+            IntervalView interval80,
+            VolatilityView volatility,
+            UserImpactView userImpact,
+            LabelsView labels,
+            ModelInfoView modelInfo,
+            String uncertaintyNote,
+            String disclaimer
     ) {
     }
 
+    /** 과거 관측 한 점. */
+    public record HistoryPoint(LocalDate date, double rate) {
+    }
+
+    /** 예측 범위 한 점 (50퍼센트·80퍼센트 경계). */
+    public record BandPoint(LocalDate date, double p50Lo, double p50Hi, double p80Lo, double p80Hi) {
+    }
+
+    /** 모델 참고 중심 경로 한 점 (L2 — 표시 전용). */
+    public record ModelPathPoint(LocalDate date, double rate) {
+    }
+
+    /** 지평 끝 80퍼센트 구간. */
+    public record IntervalView(double lo, double hi, double widthPct) {
+    }
+
+    /** 변동성 지표. {@code regime} 은 {@code calm/normal/elevated/stress} 4종. */
+    public record VolatilityView(double vol30d, double volPercentile5y, String regime) {
+    }
+
+    /** 환율 1퍼센트 변동 시 자산 영향. */
+    public record UserImpactView(long per1pctKrw, long assetKrw) {
+    }
+
+    /** 표시 라벨. 음영을 "변동성"이라 부르지 않는다(FR-FC-04·05). */
+    public record LabelsView(String band, String modelPath) {
+    }
+
+    /** 모델 정보 — 구간 수준·가정·한계. */
+    public record ModelInfoView(List<Double> intervalLevels, String assumptions, String limitations) {
+    }
+
+    /** 모델 성적표 (명세 §5.8). */
+    public record ModelPerformanceView(
+            String pairCode,
+            int horizonDays,
+            ModelMetricsView model,
+            RandomWalkMetricsView randomWalk,
+            double rwImprovement,
+            ValidationView validation,
+            String note,
+            java.time.Instant evaluatedAt
+    ) {
+    }
+
+    /** 모델 지표. {@code coverage80} 은 반드시 {@code avgWidth} 와 함께 노출한다. */
+    public record ModelMetricsView(double hitRate, double mae, double coverage80, double avgWidth) {
+    }
+
+    /** 랜덤워크 벤치마크 지표. */
+    public record RandomWalkMetricsView(double hitRate, double mae) {
+    }
+
+    /** 검증 방법. */
+    public record ValidationView(String method, int folds, boolean leakageGuard) {
+    }
+
     /**
-     * 경제 이벤트 데이터.
+     * 전망 동인 (L2 — 표시 전용).
+     *
+     * <p>동인 값을 담는 필드가 없다. 출처가 확정되지 않아 서버가 내려보낼 동인이 <b>하나도 없기</b>
+     * 때문이다 — 빈 컨테이너를 미리 만들어 두면 "값이 곧 채워진다"는 잘못된 신호를 준다(FR-CM-10).
+     * 응답의 {@code factors} 는 API 계약 유지를 위해 항상 빈 배열이다.
      */
-    public record EconomicEventData(String date, String title, String currencyCode, String importance) {
+    public record FactorsView(String pairCode) {
+    }
+
+    /** 경제 이벤트. */
+    public record EconomicEventView(LocalDate date, String title, String currencyCode, String importance) {
     }
 }

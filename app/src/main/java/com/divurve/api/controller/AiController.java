@@ -1,92 +1,99 @@
 package com.divurve.api.controller;
 
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.ai.ExplainRequest;
 import com.divurve.api.dto.ai.ExplainResponse;
-import com.divurve.api.dto.ai.ParseGoalRequest;
-import com.divurve.api.dto.ai.ParseGoalResponse;
 import com.divurve.common.architecture.WebAdapter;
 import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.response.ApiResponse;
+import com.divurve.common.response.Meta;
 import com.divurve.domain.ai.AiService;
 import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.responses.ApiResponses;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.time.Instant;
 import java.util.Objects;
+import java.util.UUID;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * AI 엔드포인트 (명세 4장, 이슈 #23).
- * NFR-AI-01: AI 는 산술을 하지 않고 엔진 결과만 인용한다.
- * NFR-AI-02: 수치 불일치 시 폐기·재생성한다.
- * NFR-AI-03: 단정적·권유 표현은 후처리로 차단한다.
+ * AI 서술 엔드포인트 (API 명세 v2 §5.12, 이슈 #54(7.5)).
+ * FR-AI-01: 점수·금액·범위·등급은 계산 엔진이 만들고, AI 는 검증된 {@code facts} 만 서술한다.
+ * FR-AI-05: 서술의 숫자·표현을 후처리로 대조·검사한다.
+ * FR-AI-06: 검증 실패 시에도 <b>200 + fallback:true</b> 를 반환한다 — AI 실패는 서비스 실패가 아니다.
+ *
+ * <p>v1 의 {@code POST /ai/parse-goal} 은 v2 에서 삭제됐다(요구사항 v2 §0 개정표 — 자연어 목표 입력은
+ * Route 상세설계 확정 전까지 MVP 범위 밖).
  */
 @WebAdapter
 @RestController
 @RequestMapping("/api/v1/ai")
-@Tag(name = "AI", description = "자연어 목표 구조화·엔진 결과 서술")
+@Tag(name = "AI", description = "계산 엔진 결과의 자연어 서술 (v2)")
 public class AiController {
 
     private final AiService aiService;
 
     public AiController(AiService aiService) {
-        this.aiService = Objects.requireNonNull(aiService);
+        this.aiService = Objects.requireNonNull(aiService, "aiService");
     }
 
-    @Operation(summary = "자연어 문장을 목표 제약으로 구조화")
-    @PostMapping("/parse-goal")
-    public ApiResponse<ParseGoalResponse> parseGoal(@RequestBody ParseGoalRequest request) {
-        validateParseGoalRequest(request);
-
-        AiService.ParsedGoal parsed = aiService.parseGoal(request.text());
-
-        ParseGoalResponse response = new ParseGoalResponse(
-                new ParseGoalResponse.Parsed(
-                        parsed.kind(),
-                        parsed.purpose(),
-                        parsed.currencyCode(),
-                        parsed.targetAmount(),
-                        parsed.recurInterval()),
-                parsed.confidence(),
-                parsed.missing());
-
-        return ApiResponse.of(response);
-    }
-
-    @Operation(summary = "엔진 결과를 설명 프로필에 맞춰 서술")
+    @Operation(
+            summary = "엔진 결과를 설명 선호에 맞춰 서술",
+            description = "surface·facts 를 받아 문장으로 서술한다. explain_level·explain_domain 은 "
+                    + "요청 본문이 아니라 사용자 설정에서 읽는다(FR-CM-08). 수치 대조·표현 필터를 "
+                    + "통과하지 못해도 400 을 내지 않고 200 + fallback:true + 고정 템플릿을 반환한다"
+                    + "(FR-AI-06, NFR-AI-03).")
+    @ApiResponses({
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                responseCode = "200", description = "서술 성공 또는 폴백(둘 다 200)"),
+        @io.swagger.v3.oas.annotations.responses.ApiResponse(
+                responseCode = "400", description = "surface 또는 facts 누락")
+    })
     @PostMapping("/explain")
-    public ApiResponse<ExplainResponse> explain(@RequestBody ExplainRequest request) {
+    public ApiResponse<ExplainResponse> explain(
+            @CurrentUser UUID userId, @RequestBody ExplainRequest request) {
         validateExplainRequest(request);
 
-        String narrative = aiService.explain(request.profile(), request.metrics());
+        AiService.ExplainOutcome outcome = aiService.explain(userId, request.surface(), request.facts());
 
-        if (narrative == null) {
-            throw new InvalidRequestException("AI 서술 생성에 실패했습니다. 최대 재시도 횟수를 초과했습니다.");
-        }
+        ExplainResponse response = new ExplainResponse(
+                new ExplainResponse.Explanation(
+                        outcome.sentences(),
+                        outcome.sentences().size(),
+                        outcome.explainLevel(),
+                        outcome.explainDomain(),
+                        outcome.fallback()),
+                new ExplainResponse.Verification(outcome.numericMatch(), outcome.blockedPhrases()));
 
-        ExplainResponse response = new ExplainResponse(narrative);
-        return ApiResponse.of(response);
+        return ApiResponse.of(response, resolveMeta(request));
     }
 
-    private void validateParseGoalRequest(ParseGoalRequest request) {
-        if (request == null) {
-            throw new InvalidRequestException("요청 본문이 필요합니다.");
+    /**
+     * {@code facts.regime} 이 있으면 급변 상태 배지를 메타에 실어 전 화면과 같은 어휘로 노출한다(FR-SF-02).
+     * {@code request.facts()} 는 {@link #validateExplainRequest} 가 이미 비어있지 않음을 보장했으므로 여기서는
+     * {@code null} 을 다시 검사하지 않는다.
+     */
+    private Meta resolveMeta(ExplainRequest request) {
+        Meta meta = Meta.mock(Instant.now());
+        Object regime = request.facts().get("regime");
+        if (regime instanceof String regimeCode && !regimeCode.isBlank()) {
+            meta = meta.withRegime(regimeCode);
         }
-        if (request.text() == null || request.text().isBlank()) {
-            throw new InvalidRequestException("text 필드는 필수입니다.");
-        }
+        return meta;
     }
 
     private void validateExplainRequest(ExplainRequest request) {
         if (request == null) {
             throw new InvalidRequestException("요청 본문이 필요합니다.");
         }
-        if (request.profile() == null || request.profile().isBlank()) {
-            throw new InvalidRequestException("profile 필드는 필수입니다.");
+        if (request.surface() == null || request.surface().isBlank()) {
+            throw new InvalidRequestException("surface 필드는 필수입니다.");
         }
-        if (request.metrics() == null || request.metrics().isEmpty()) {
-            throw new InvalidRequestException("metrics 필드는 필수입니다.");
+        if (request.facts() == null || request.facts().isEmpty()) {
+            throw new InvalidRequestException("facts 필드는 필수입니다.");
         }
     }
 }

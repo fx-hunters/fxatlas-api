@@ -12,9 +12,15 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 계획 확정·저장·버전 관리 서비스.
+ * 계획 확정·저장·버전 관리 서비스 — <b>우선순위 P(구조만 준비)</b>.
  * 계획의 메타정보(safe_ratio, split_count 등)를 받아 저장하고,
  * 회차 목록을 생성한 후 버전 이력을 관리한다.
+ *
+ * <p><b>⚠ 요구사항 v2 §4.12 미확정 — 값은 후보이며 확정 요구사항이 아니다.</b> 안전/기회 버킷의
+ * 존재와 비율 · 목적별 하한선 · 권장 분할 회차 · 몬테카를로 적용 여부 · 달성 확률 정의가 전부
+ * 미확정이고, 기존 문서의 50/70/85/95% 와 4~8회는 후보값이다. API 명세 v2 §6 은 Route 계산
+ * 엔드포인트를 명세하지 않으므로, {@code route.enabled} 가 꺼진 기본 상태에서 이 서비스는
+ * 호출되지 않는다 — {@code PlanController} 가 진입 전에 501 로 막는다.
  */
 @UseCase
 public class PlanConfirmService {

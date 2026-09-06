@@ -1,6 +1,7 @@
 package com.divurve.domain.holding;
 
 import com.divurve.common.architecture.UseCase;
+import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.PurchaseFxRate;
@@ -15,7 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 /**
  * 외화 예금 CRUD 유스케이스 (이슈 #13, FR-XR-10, FR-ON-04).
  * 소유자 필터(NFR-SE-03)로 데이터를 격리하고, 예치 시점 환율 컨텍스트를 {@link PurchaseFxRateResolver} 로 채운다.
- * 이 이슈에서는 조회·추가만 노출한다(수정·삭제는 후속 이슈에서 열 예정).
+ * 수정·삭제는 API 명세 v2 §0.2 가 추가한 {@code PUT/DELETE /deposits/:id}(FR-XR-07)를 받는다.
  */
 @UseCase
 public class DepositService {
@@ -51,5 +52,32 @@ public class DepositService {
                 purchaseFxRateResolver.resolve(currencyCode, purchasedAt, purchaseFxRateFallbackKrw);
         deposit.assignPurchaseContext(purchasedAt, fxRate);
         return depositRepository.save(deposit);
+    }
+
+    /** 예금 잔액 수정. 예치 시점 환율 근거는 유지된다 (FR-XR-07). */
+    @Transactional
+    public Deposit update(UUID ownerId, UUID depositId, BigDecimal amount) {
+        if (amount == null || amount.compareTo(BigDecimal.ZERO) < 0) {
+            throw new InvalidRequestException("예금 잔액은 0보다 작을 수 없습니다.", "amount");
+        }
+        Deposit deposit = loadOwned(ownerId, depositId);
+        deposit.updateAmount(amount);
+        return deposit;
+    }
+
+    /** 소유자 소유의 예금만 삭제한다 (FR-XR-07). */
+    @Transactional
+    public void delete(UUID ownerId, UUID depositId) {
+        depositRepository.delete(loadOwned(ownerId, depositId));
+    }
+
+    private Deposit loadOwned(UUID ownerId, UUID depositId) {
+        Deposit deposit = depositRepository.findById(depositId)
+                .orElseThrow(() -> new NotFoundException("외화 예금을 찾을 수 없습니다."));
+        if (!deposit.getOwner().getId().equals(ownerId)) {
+            // 소유자 격리 위반 — 존재 여부를 노출하지 않기 위해 동일한 404 로 응답한다(NFR-SE-03).
+            throw new NotFoundException("외화 예금을 찾을 수 없습니다.");
+        }
+        return deposit;
     }
 }
