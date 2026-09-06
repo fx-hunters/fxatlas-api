@@ -328,4 +328,280 @@ class SafeModeEvaluatorTest {
             .orElseThrow();
         assertTrue(volatility.passed());
     }
+
+    @Test
+    @DisplayName("데이터 노후 조건 - lastUpdateDate null 처리")
+    void testDataStalenessWithNullLastUpdateDate() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(null)
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var staleness = result.checks().stream()
+            .filter(c -> "data_staleness".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertFalse(staleness.passed());
+        assertTrue(staleness.reason().contains("업데이트 이력"));
+    }
+
+    @Test
+    @DisplayName("출처 간 차이 조건 - primaryRate만 null")
+    void testSourceDiscrepancyWithNullPrimaryRate() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(null)
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var discrepancy = result.checks().stream()
+            .filter(c -> "source_discrepancy".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(discrepancy.passed());
+    }
+
+    @Test
+    @DisplayName("출처 간 차이 조건 - secondaryRate만 null")
+    void testSourceDiscrepancyWithNullSecondaryRate() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(null)
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var discrepancy = result.checks().stream()
+            .filter(c -> "source_discrepancy".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(discrepancy.passed());
+    }
+
+    @Test
+    @DisplayName("실제환율 이탈 조건 - currentRate만 null")
+    void testRateDeviationWithNullCurrentRate() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(null)
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var deviation = result.checks().stream()
+            .filter(c -> "rate_deviation".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(deviation.passed());
+    }
+
+    @Test
+    @DisplayName("실제환율 이탈 조건 - movingAverageRate만 null")
+    void testRateDeviationWithNullMovingAverageRate() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(null)
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var deviation = result.checks().stream()
+            .filter(c -> "rate_deviation".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(deviation.passed());
+    }
+
+    @Test
+    @DisplayName("변동성 조건 - currentVolatility만 null")
+    void testVolatilityHighWithNullCurrentVolatility() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(null)
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var volatility = result.checks().stream()
+            .filter(c -> "volatility_high".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(volatility.passed());
+    }
+
+    @Test
+    @DisplayName("변동성 조건 - historicalAverageVolatility만 null")
+    void testVolatilityHighWithNullHistoricalAverageVolatility() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(null)
+            .daysUntilDeadline(30L)
+            .uncoveredRatio(new BigDecimal("0.05"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var volatility = result.checks().stream()
+            .filter(c -> "volatility_high".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(volatility.passed());
+    }
+
+    @Test
+    @DisplayName("미확보율 조건 - daysUntilDeadline만 null")
+    void testCoverageShortfallWithNullDaysUntilDeadline() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(null)
+            .uncoveredRatio(new BigDecimal("0.25"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var coverage = result.checks().stream()
+            .filter(c -> "coverage_shortfall".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(coverage.passed());
+    }
+
+    @Test
+    @DisplayName("미확보율 조건 - uncoveredRatio만 null")
+    void testCoverageShortfallWithNullUncoveredRatio() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(7L)
+            .uncoveredRatio(null)
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var coverage = result.checks().stream()
+            .filter(c -> "coverage_shortfall".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(coverage.passed());
+    }
+
+    @Test
+    @DisplayName("미확보율 조건 - 마감 전, 미확보율 미달")
+    void testCoverageShortfallBeforeDeadlineWithLowRatio() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(10L)
+            .uncoveredRatio(new BigDecimal("0.10"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var coverage = result.checks().stream()
+            .filter(c -> "coverage_shortfall".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(coverage.passed());
+    }
+
+    @Test
+    @DisplayName("미확보율 조건 - 음수 일수 처리")
+    void testCoverageShortfallWithNegativeDays() {
+        SafeModeEvaluation eval = SafeModeEvaluation.builder()
+            .lastUpdateDate(LocalDate.now())
+            .primaryRate(new BigDecimal("1200"))
+            .secondaryRate(new BigDecimal("1210"))
+            .currentRate(new BigDecimal("1205"))
+            .movingAverageRate(new BigDecimal("1200"))
+            .currentVolatility(new BigDecimal("0.01"))
+            .historicalAverageVolatility(new BigDecimal("0.01"))
+            .daysUntilDeadline(-5L)
+            .uncoveredRatio(new BigDecimal("0.50"))
+            .consecutiveSkipCount(1L)
+            .build();
+
+        SafeModeCheckResult result = evaluator.evaluate(eval);
+
+        var coverage = result.checks().stream()
+            .filter(c -> "coverage_shortfall".equals(c.key()))
+            .findFirst()
+            .orElseThrow();
+        assertTrue(coverage.passed());
+    }
 }
