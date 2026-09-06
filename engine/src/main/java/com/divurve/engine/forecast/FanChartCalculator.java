@@ -16,6 +16,15 @@ import java.util.Objects;
  */
 public class FanChartCalculator {
 
+    /** 연 영업일 수 — {@link GbmSimulator} 의 {@code dt = 1/252} 와 같은 환산 기준. */
+    private static final double TRADING_DAYS_PER_YEAR = 252.0;
+
+    /** 표준정규 50퍼센트 구간(0.25~0.75)의 z 값. */
+    private static final double Z_50 = 0.6744897501960817;
+
+    /** 표준정규 80퍼센트 구간(0.10~0.90)의 z 값. */
+    private static final double Z_80 = 1.2815515655446004;
+
     private FanChartCalculator() {
     }
 
@@ -73,38 +82,40 @@ public class FanChartCalculator {
     }
 
     /**
-     * 80% 구간 상단값 (기준 대비 상승률로 표현).
+     * 드리프트 0 로그정규 구간의 해석적 경계 (몬테카를로 없이).
      *
-     * @param baseRate 드리프트 0 기준선
-     * @param p80Hi 80% 구간 상단
-     * @return (p80Hi - baseRate) / baseRate (예: 0.05 = 5% 상승)
+     * <p>{@link GbmSimulator} 와 같은 모형을 닫힌 형태로 푼 것이다 — 드리프트 0 이므로 중앙값은
+     * {@code baseRate} 이고, 지평 {@code horizonDays} 의 로그수익률 표준편차는
+     * {@code annualVol × sqrt(horizonDays / 252)} 다({@link GbmSimulator} 와 동일한 영업일 환산).
+     * 경계는 {@code baseRate × exp(±z × σ_h)}.
+     *
+     * <p>모델 성적표(FR-FC-11)의 워크포워드 검증처럼 <b>같은 입력에 같은 구간</b>이 나와야 하는 곳에서 쓴다.
+     * 시뮬레이션은 경로 수와 시드에 따라 구간이 흔들려 성적표 수치가 재현되지 않는다.
+     *
+     * @param baseRate    기준 환율 (드리프트 0 중앙값)
+     * @param annualVol   연환산 변동성 (예 {@code 0.061})
+     * @param horizonDays 미래 지평 (영업일)
+     * @return 50퍼센트·80퍼센트 구간 경계
+     * @throws IllegalArgumentException baseRate 가 0 이하, annualVol 이 음수, horizonDays 가 0 이하인 경우
      */
-    public static double interval80WidthHighPct(double baseRate, double p80Hi) {
-        return (p80Hi - baseRate) / baseRate;
-    }
+    public static PathPoint analyticInterval(double baseRate, double annualVol, int horizonDays) {
+        if (baseRate <= 0) {
+            throw new IllegalArgumentException("baseRate must be positive");
+        }
+        if (annualVol < 0) {
+            throw new IllegalArgumentException("annualVol must not be negative");
+        }
+        if (horizonDays <= 0) {
+            throw new IllegalArgumentException("horizonDays must be positive");
+        }
 
-    /**
-     * 80% 구간 하단값 (기준 대비 하락률로 표현).
-     *
-     * @param baseRate 드리프트 0 기준선
-     * @param p80Lo 80% 구간 하단
-     * @return (baseRate - p80Lo) / baseRate (예: 0.05 = 5% 하락)
-     */
-    public static double interval80WidthLowPct(double baseRate, double p80Lo) {
-        return (baseRate - p80Lo) / baseRate;
-    }
-
-    /**
-     * 3년 평균 대비 80% 구간 폭 비율.
-     *
-     * @param p80Hi 80% 구간 상단
-     * @param p80Lo 80% 구간 하단
-     * @param threeYearAvg 3년 평균 환율
-     * @return 폭 / 3년 평균
-     */
-    public static double interval80VsThreeYearAvg(double p80Hi, double p80Lo, double threeYearAvg) {
-        double width = p80Hi - p80Lo;
-        return width / threeYearAvg;
+        double sigmaHorizon = annualVol * Math.sqrt((double) horizonDays / TRADING_DAYS_PER_YEAR);
+        return new PathPoint(
+            baseRate * Math.exp(-Z_50 * sigmaHorizon),
+            baseRate * Math.exp(Z_50 * sigmaHorizon),
+            baseRate * Math.exp(-Z_80 * sigmaHorizon),
+            baseRate * Math.exp(Z_80 * sigmaHorizon)
+        );
     }
 
     private static double percentile(List<Double> values, double p) {

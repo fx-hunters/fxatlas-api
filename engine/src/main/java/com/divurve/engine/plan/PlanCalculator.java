@@ -5,6 +5,14 @@ import static java.util.Objects.requireNonNull;
 /**
  * 계획 회차 관련 순수 계산 함수.
  * Spring/JPA 의존 없음. 모든 메서드는 상태를 변경하지 않는 순수 함수.
+ *
+ * <p><b>⚠ 요구사항 v2 §4.12 미확정</b> — 달성 확률의 정의 자체가 미확정이므로
+ * {@link #calculateAchieveProbAfterSkip} 의 선형 휴리스틱은 <b>후보일 뿐 확정 요구사항이 아니다</b>.
+ * 계산기는 남겨 두되 {@code route.enabled} 가 꺼진 동안에는 호출되지 않는다 — {@code /api/v1/plans/*}
+ * 가 501 을 반환한다(명세 v2 §6).
+ *
+ * <p>v1 의 {@code shouldTriggerSafeMode(연속 건너뛰기 ≥ 3 → 안전모드)} 는 <b>삭제했다</b>.
+ * v1 안전모드 기능 자체가 v2 에서 제거됐고, 임계치 3 역시 §4.12 의 미확정 값이었다.
  */
 public class PlanCalculator {
 
@@ -87,16 +95,5 @@ public class PlanCalculator {
             return 0.0;
         }
         return currentAchieveProb * ((double) remainingSteps / totalSteps);
-    }
-
-    /**
-     * 연속 건너뛰기 여부 판정.
-     * 임계치(3회)에 도달하면 true.
-     *
-     * @param consecutiveSkips 연속 건너뛰기 누적 카운트
-     * @return 안전 모드 시작 여부
-     */
-    public static boolean shouldTriggerSafeMode(int consecutiveSkips) {
-        return consecutiveSkips >= 3;
     }
 }

@@ -1,260 +1,279 @@
 package com.divurve.engine.forecast;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
-import java.util.ArrayList;
+import java.lang.reflect.Constructor;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 
+/**
+ * {@link ModelPerformanceCalculator} 검증 (명세 v2 §5.8).
+ *
+ * <p>이전 테스트는 {@code (forecasts, actuals)} 2인자 시그니처를 검증했고, 그 구현이 첫 시점을
+ * 항상 미적중으로 세는 편향을 갖고 있었다. 기준값을 인자로 받는 새 계약을 여기서 다시 못박는다 —
+ * <b>완벽 예측 n건은 적중률 1.0</b> 이어야 한다.
+ */
+@DisplayName("ModelPerformanceCalculator")
 class ModelPerformanceCalculatorTest {
 
     @Test
-    void testCalculateHitRate_PerfectPrediction() {
-        // 예측과 실제 값이 방향이 일치해야 함
-        // 초기값을 1200으로 가정하고, 모두 상승하는 경우
-        List<Double> predictions = List.of(1210.0, 1220.0, 1230.0);
-        List<Double> actuals = List.of(1210.0, 1220.0, 1230.0);
-
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        // 첫 번째는 기준이 없으므로 판단 불가, 2~3번째는 일치
-        assertTrue(hitRate >= 0);
+    @DisplayName("유틸리티 클래스라 인스턴스를 만들 이유가 없다")
+    void privateConstructor() throws Exception {
+        Constructor<ModelPerformanceCalculator> constructor =
+                ModelPerformanceCalculator.class.getDeclaredConstructor();
+        constructor.setAccessible(true);
+        assertNotNull(constructor.newInstance());
     }
 
-    @Test
-    void testCalculateHitRate_NoMatch() {
-        List<Double> predictions = List.of(1200.0, 1190.0, 1180.0);
-        List<Double> actuals = List.of(1200.0, 1210.0, 1220.0);
+    @Nested
+    @DisplayName("방향 적중률")
+    class HitRate {
 
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        assertTrue(hitRate >= 0 && hitRate <= 1.0);
+        @Test
+        @DisplayName("완벽 예측 3건은 1.0 — i=0 편향이 없다")
+        void perfectForecastIsOne() {
+            List<Double> base = List.of(1000.0, 1000.0, 1000.0);
+            List<Double> forecast = List.of(1010.0, 990.0, 1000.0);
+            List<Double> actual = List.of(1020.0, 980.0, 1000.0);
+
+            assertEquals(1.0, ModelPerformanceCalculator.calculateHitRate(base, forecast, actual));
+        }
+
+        @Test
+        @DisplayName("방향이 어긋나면 미적중")
+        void wrongDirection() {
+            List<Double> base = List.of(1000.0, 1000.0);
+            List<Double> forecast = List.of(1010.0, 1010.0);
+            List<Double> actual = List.of(1020.0, 980.0);
+
+            assertEquals(0.5, ModelPerformanceCalculator.calculateHitRate(base, forecast, actual));
+        }
+
+        @Test
+        @DisplayName("보합 예측은 실제도 보합일 때만 적중")
+        void flatForecast() {
+            List<Double> base = List.of(1000.0, 1000.0);
+            List<Double> forecast = List.of(1000.0, 1000.0);
+            List<Double> actual = List.of(1000.0, 1001.0);
+
+            assertEquals(0.5, ModelPerformanceCalculator.calculateHitRate(base, forecast, actual));
+        }
+
+        @Test
+        @DisplayName("빈 입력은 0")
+        void empty() {
+            assertEquals(0.0, ModelPerformanceCalculator.calculateHitRate(List.of(), List.of(), List.of()));
+        }
+
+        @Test
+        @DisplayName("null 입력은 NPE")
+        void nulls() {
+            List<Double> ok = List.of(1.0);
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateHitRate(null, ok, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateHitRate(ok, null, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateHitRate(ok, ok, null));
+        }
+
+        @Test
+        @DisplayName("크기가 다르면 예외")
+        void sizeMismatch() {
+            List<Double> one = List.of(1.0);
+            List<Double> two = List.of(1.0, 2.0);
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateHitRate(one, two, two));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateHitRate(two, two, one));
+        }
     }
 
-    @Test
-    void testCalculateHitRate_MismatchedSizes() {
-        List<Double> predictions = List.of(1200.0, 1210.0);
-        List<Double> actuals = List.of(1200.0, 1210.0, 1220.0);
+    @Nested
+    @DisplayName("상대 MAE")
+    class MaeRatio {
 
-        assertThrows(IllegalArgumentException.class,
-            () -> ModelPerformanceCalculator.calculateHitRate(predictions, actuals));
+        @Test
+        @DisplayName("기준값 대비 비율로 나온다")
+        void ratio() {
+            List<Double> forecast = List.of(1010.0, 990.0);
+            List<Double> actual = List.of(1000.0, 1000.0);
+
+            // (10/1000 + 10/1000) / 2 = 0.01
+            assertEquals(0.01, ModelPerformanceCalculator.calculateMaeRatio(forecast, actual), 1e-12);
+        }
+
+        @Test
+        @DisplayName("실제값 음수도 절대값 기준으로 나눈다")
+        void negativeActual() {
+            assertEquals(0.5,
+                    ModelPerformanceCalculator.calculateMaeRatio(List.of(-15.0), List.of(-10.0)), 1e-12);
+        }
+
+        @Test
+        @DisplayName("빈 입력은 0")
+        void empty() {
+            assertEquals(0.0, ModelPerformanceCalculator.calculateMaeRatio(List.of(), List.of()));
+        }
+
+        @Test
+        @DisplayName("실제값 0 은 예외")
+        void zeroActual() {
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateMaeRatio(List.of(1.0), List.of(0.0)));
+        }
+
+        @Test
+        @DisplayName("null·크기 불일치")
+        void nullsAndMismatch() {
+            List<Double> ok = List.of(1.0);
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateMaeRatio(null, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateMaeRatio(ok, null));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateMaeRatio(ok, List.of(1.0, 2.0)));
+        }
     }
 
-    @Test
-    void testCalculateHitRate_Empty() {
-        List<Double> predictions = new ArrayList<>();
-        List<Double> actuals = new ArrayList<>();
+    @Nested
+    @DisplayName("구간 포함률")
+    class Coverage80 {
 
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        assertEquals(0.0, hitRate);
+        @Test
+        @DisplayName("구간 안이면 포함, 경계는 포함")
+        void covered() {
+            List<Double> lo = List.of(900.0, 900.0, 900.0, 900.0);
+            List<Double> hi = List.of(1100.0, 1100.0, 1100.0, 1100.0);
+            List<Double> actual = List.of(1000.0, 900.0, 1100.0, 1200.0);
+
+            assertEquals(0.75, ModelPerformanceCalculator.calculateCoverage80(lo, hi, actual));
+        }
+
+        @Test
+        @DisplayName("하단 미만은 미포함")
+        void belowLower() {
+            assertEquals(0.0, ModelPerformanceCalculator.calculateCoverage80(
+                    List.of(900.0), List.of(1100.0), List.of(800.0)));
+        }
+
+        @Test
+        @DisplayName("빈 입력은 0")
+        void empty() {
+            assertEquals(0.0,
+                    ModelPerformanceCalculator.calculateCoverage80(List.of(), List.of(), List.of()));
+        }
+
+        @Test
+        @DisplayName("null·크기 불일치")
+        void nullsAndMismatch() {
+            List<Double> ok = List.of(1.0);
+            List<Double> two = List.of(1.0, 2.0);
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateCoverage80(null, ok, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateCoverage80(ok, null, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateCoverage80(ok, ok, null));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateCoverage80(ok, two, two));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateCoverage80(two, two, ok));
+        }
     }
 
-    @Test
-    void testCalculateHitRate_NullInput() {
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateHitRate(null, List.of(1200.0)));
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateHitRate(List.of(1200.0), null));
+    @Nested
+    @DisplayName("평균 구간 폭")
+    class AvgWidthRatio {
+
+        @Test
+        @DisplayName("기준값 대비 비율")
+        void ratio() {
+            List<Double> lo = List.of(950.0);
+            List<Double> hi = List.of(1010.0);
+            List<Double> base = List.of(1000.0);
+
+            assertEquals(0.06,
+                    ModelPerformanceCalculator.calculateAvgWidthRatio(lo, hi, base), 1e-12);
+        }
+
+        @Test
+        @DisplayName("빈 입력은 0")
+        void empty() {
+            assertEquals(0.0,
+                    ModelPerformanceCalculator.calculateAvgWidthRatio(List.of(), List.of(), List.of()));
+        }
+
+        @Test
+        @DisplayName("기준값 0 은 예외")
+        void zeroBase() {
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateAvgWidthRatio(
+                            List.of(1.0), List.of(2.0), List.of(0.0)));
+        }
+
+        @Test
+        @DisplayName("null·크기 불일치")
+        void nullsAndMismatch() {
+            List<Double> ok = List.of(1.0);
+            List<Double> two = List.of(1.0, 2.0);
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateAvgWidthRatio(null, ok, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateAvgWidthRatio(ok, null, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateAvgWidthRatio(ok, ok, null));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateAvgWidthRatio(ok, two, two));
+            assertThrows(IllegalArgumentException.class,
+                    () -> ModelPerformanceCalculator.calculateAvgWidthRatio(two, two, ok));
+        }
     }
 
-    @Test
-    void testCalculateMae_HappyPath() {
-        List<Double> predictions = List.of(1200.0, 1210.0, 1220.0);
-        List<Double> actuals = List.of(1210.0, 1220.0, 1230.0);
+    @Nested
+    @DisplayName("랜덤워크 벤치마크와 개선율")
+    class RandomWalk {
 
-        double mae = ModelPerformanceCalculator.calculateMae(predictions, actuals);
-        assertEquals(10.0, mae, 1e-6);
-    }
+        @Test
+        @DisplayName("직전 실측값을 예측으로 쓰므로 방향 적중률은 실제가 보합일 때만 오른다")
+        void benchmark() {
+            List<Double> base = List.of(1000.0, 1000.0);
+            List<Double> actual = List.of(1000.0, 1020.0);
 
-    @Test
-    void testCalculateMae_ZeroError() {
-        List<Double> predictions = List.of(1200.0, 1210.0);
-        List<Double> actuals = List.of(1200.0, 1210.0);
+            ModelPerformanceCalculator.RandomWalkMetrics metrics =
+                    ModelPerformanceCalculator.calculateRandomWalkBenchmark(base, actual);
 
-        double mae = ModelPerformanceCalculator.calculateMae(predictions, actuals);
-        assertEquals(0.0, mae, 1e-6);
-    }
+            assertEquals(0.5, metrics.hitRate());
+            // |1000-1000|/1000 = 0, |1000-1020|/1020 = 0.019607...
+            assertEquals(0.0098039, metrics.mae(), 1e-6);
+        }
 
-    @Test
-    void testCalculateMae_Empty() {
-        double mae = ModelPerformanceCalculator.calculateMae(new ArrayList<>(), new ArrayList<>());
-        assertEquals(0.0, mae);
-    }
+        @Test
+        @DisplayName("null 입력은 NPE")
+        void nulls() {
+            List<Double> ok = List.of(1.0);
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateRandomWalkBenchmark(null, ok));
+            assertThrows(NullPointerException.class,
+                    () -> ModelPerformanceCalculator.calculateRandomWalkBenchmark(ok, null));
+        }
 
-    @Test
-    void testCalculateCoverage80_AllInside() {
-        List<Double> lowerBounds = List.of(1150.0, 1160.0, 1170.0);
-        List<Double> upperBounds = List.of(1250.0, 1260.0, 1270.0);
-        List<Double> actuals = List.of(1200.0, 1210.0, 1220.0);
+        @Test
+        @DisplayName("개선율: 랜덤워크 MAE 가 0 이면 0")
+        void zeroRwMae() {
+            assertEquals(0.0, ModelPerformanceCalculator.calculateImprovement(0.01, 0.0));
+        }
 
-        double coverage = ModelPerformanceCalculator.calculateCoverage80(lowerBounds, upperBounds, actuals);
-        assertEquals(1.0, coverage, 1e-6);
-    }
-
-    @Test
-    void testCalculateCoverage80_NoneInside() {
-        List<Double> lowerBounds = List.of(1300.0, 1310.0);
-        List<Double> upperBounds = List.of(1400.0, 1410.0);
-        List<Double> actuals = List.of(1200.0, 1210.0);
-
-        double coverage = ModelPerformanceCalculator.calculateCoverage80(lowerBounds, upperBounds, actuals);
-        assertEquals(0.0, coverage, 1e-6);
-    }
-
-    @Test
-    void testCalculateCoverage80_PartialInside() {
-        List<Double> lowerBounds = List.of(1150.0, 1300.0);
-        List<Double> upperBounds = List.of(1250.0, 1400.0);
-        List<Double> actuals = List.of(1200.0, 1250.0);
-
-        double coverage = ModelPerformanceCalculator.calculateCoverage80(lowerBounds, upperBounds, actuals);
-        assertEquals(0.5, coverage, 1e-6);
-    }
-
-    @Test
-    void testCalculateAvgWidth_HappyPath() {
-        List<Double> lowerBounds = List.of(1150.0, 1160.0);
-        List<Double> upperBounds = List.of(1250.0, 1260.0);
-
-        double avgWidth = ModelPerformanceCalculator.calculateAvgWidth(lowerBounds, upperBounds);
-        assertEquals(100.0, avgWidth, 1e-6); // (100 + 100) / 2 = 100
-    }
-
-    @Test
-    void testCalculateAvgWidth_Empty() {
-        double avgWidth = ModelPerformanceCalculator.calculateAvgWidth(new ArrayList<>(), new ArrayList<>());
-        assertEquals(0.0, avgWidth);
-    }
-
-    @Test
-    void testCalculateRandomWalkBenchmark() {
-        List<Double> actuals = List.of(1200.0, 1210.0, 1220.0);
-        ModelPerformanceCalculator.RandomWalkMetrics metrics =
-            ModelPerformanceCalculator.calculateRandomWalkBenchmark(1200.0, actuals);
-
-        assertTrue(metrics.hitRate() >= 0 && metrics.hitRate() <= 1.0);
-        assertTrue(metrics.mae() >= 0);
-    }
-
-    @Test
-    void testCalculateImprovement_Better() {
-        double improvement = ModelPerformanceCalculator.calculateImprovement(10.0, 15.0);
-        assertEquals(1.0 / 3.0, improvement, 1e-6); // (15 - 10) / 15 ≈ 0.333
-    }
-
-    @Test
-    void testCalculateImprovement_Worse() {
-        double improvement = ModelPerformanceCalculator.calculateImprovement(20.0, 15.0);
-        assertEquals(-1.0 / 3.0, improvement, 1e-6); // (15 - 20) / 15 ≈ -0.333
-    }
-
-    @Test
-    void testCalculateImprovement_ZeroBenchmark() {
-        double improvement = ModelPerformanceCalculator.calculateImprovement(10.0, 0.0);
-        assertEquals(0.0, improvement);
-    }
-
-    @Test
-    void testCalculateMae_MismatchedSizes() {
-        assertThrows(IllegalArgumentException.class,
-            () -> ModelPerformanceCalculator.calculateMae(List.of(1.0), List.of(1.0, 2.0)));
-    }
-
-    @Test
-    void testCalculateMae_NullInput() {
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateMae(null, List.of(1.0)));
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateMae(List.of(1.0), null));
-    }
-
-    @Test
-    void testCalculateCoverage80_MismatchedSizes_BoundsVsActuals() {
-        assertThrows(IllegalArgumentException.class,
-            () -> ModelPerformanceCalculator.calculateCoverage80(
-                List.of(1.0, 2.0), List.of(3.0, 4.0), List.of(1.5)));
-    }
-
-    @Test
-    void testCalculateCoverage80_MismatchedSizes_LowerVsUpper() {
-        assertThrows(IllegalArgumentException.class,
-            () -> ModelPerformanceCalculator.calculateCoverage80(
-                List.of(1.0), List.of(3.0, 4.0), List.of(1.5)));
-    }
-
-    @Test
-    void testCalculateCoverage80_Empty() {
-        double coverage = ModelPerformanceCalculator.calculateCoverage80(
-            new ArrayList<>(), new ArrayList<>(), new ArrayList<>());
-        assertEquals(0.0, coverage);
-    }
-
-    @Test
-    void testCalculateCoverage80_NullInput() {
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateCoverage80(null, List.of(1.0), List.of(1.0)));
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateCoverage80(List.of(1.0), null, List.of(1.0)));
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateCoverage80(List.of(1.0), List.of(1.0), null));
-    }
-
-    @Test
-    void testCalculateCoverage80_ActualAboveUpperBound() {
-        List<Double> lowerBounds = List.of(1100.0);
-        List<Double> upperBounds = List.of(1200.0);
-        List<Double> actuals = List.of(1300.0);
-        double coverage = ModelPerformanceCalculator.calculateCoverage80(lowerBounds, upperBounds, actuals);
-        assertEquals(0.0, coverage, 1e-6);
-    }
-
-    @Test
-    void testCalculateAvgWidth_MismatchedSizes() {
-        assertThrows(IllegalArgumentException.class,
-            () -> ModelPerformanceCalculator.calculateAvgWidth(List.of(1.0), List.of(2.0, 3.0)));
-    }
-
-    @Test
-    void testCalculateAvgWidth_NullInput() {
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateAvgWidth(null, List.of(1.0)));
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateAvgWidth(List.of(1.0), null));
-    }
-
-    @Test
-    void testCalculateHitRate_BothDecline() {
-        List<Double> predictions = List.of(1200.0, 1180.0, 1160.0);
-        List<Double> actuals = List.of(1190.0, 1170.0, 1150.0);
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        assertTrue(hitRate > 0);
-    }
-
-    @Test
-    void testCalculateHitRate_PredEqualsActual() {
-        List<Double> predictions = List.of(1200.0, 1200.0);
-        List<Double> actuals = List.of(1200.0, 1200.0);
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        assertEquals(0.0, hitRate, 1e-6);
-    }
-
-    @Test
-    void testCalculateRandomWalkBenchmark_NullActuals() {
-        assertThrows(NullPointerException.class,
-            () -> ModelPerformanceCalculator.calculateRandomWalkBenchmark(1200.0, null));
-    }
-
-    @Test
-    void testCalculateHitRate_PredUpActualDown() {
-        List<Double> predictions = List.of(1200.0, 1210.0);
-        List<Double> actuals = List.of(1200.0, 1190.0);
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        assertEquals(0.0, hitRate, 1e-6);
-    }
-
-    @Test
-    void testCalculateHitRate_PredDownActualUp() {
-        List<Double> predictions = List.of(1200.0, 1190.0);
-        List<Double> actuals = List.of(1200.0, 1210.0);
-        double hitRate = ModelPerformanceCalculator.calculateHitRate(predictions, actuals);
-        assertEquals(0.0, hitRate, 1e-6);
+        @Test
+        @DisplayName("개선율은 음수여도 그대로 낸다")
+        void negativeImprovement() {
+            assertEquals(0.0206, ModelPerformanceCalculator.calculateImprovement(0.0190, 0.0194), 1e-4);
+            assertTrue(ModelPerformanceCalculator.calculateImprovement(0.03, 0.02) < 0.0);
+        }
     }
 }

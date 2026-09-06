@@ -13,8 +13,8 @@ import java.util.Objects;
  * 통화 집중도 계산기. 이슈 #14(X-Ray/Fit)와 #18(계획 미리보기)이 각각 필요로 한 두 계열의 계산을 담는다.
  *
  * <p>진단 계열 (이슈 #14, FR-XR-03, FR-FT-01) — {@link #diagnose}, {@link #getSortedExposure}:
- * 포트폴리오의 통화별 노출을 분석해 주력 통화 비중을 추출하고 임계값과 비교한다.
- * 초과 시 {@code warning}, 이하면 {@code safe}.
+ * 포트폴리오의 통화별 노출을 분석해 주력 통화 비중을 추출하고 성향별 기준선과 비교한다.
+ * 상태 어휘는 {@code above_threshold} / {@code within_threshold} / {@code unknown}(API 명세 v2 §5.3).
  *
  * <p>변화 보고 계열 (FR-RT-16/17) — {@link #calculateConcentration},
  * {@link #verdictConcentrationChange}, {@link #report}:
@@ -126,20 +126,39 @@ public class ConcentrationCalculator {
     private static final int PRECISION_SCALE = 4;
     private static final double EPSILON = 1e-10;
 
+    /** 주력 통화 비중이 기준선을 넘은 상태 (API 명세 v2 §5.3). */
+    public static final String ABOVE_THRESHOLD = "above_threshold";
+    /** 주력 통화 비중이 기준선 이내인 상태. */
+    public static final String WITHIN_THRESHOLD = "within_threshold";
+    /** 판정할 수 없는 상태 — 성향 미측정(기준선 없음) 또는 외화자산 없음. */
+    public static final String UNKNOWN = "unknown";
+
     /**
-     * 포트폴리오의 집중도를 진단한다.
+     * 포트폴리오의 통화 집중도를 진단한다 (FR-XR-03 · FR-FT-01).
      *
-     * @param currencyToAssetKrw 통화코드 → 금액(원화)의 맵
-     * @param concentrationThreshold 집중도 임계값 (0 ~ 1, 투자성향별 기본값)
+     * <p>상태 어휘는 API 명세 v2 §5.3 을 따른다 — {@code above_threshold} / {@code within_threshold} /
+     * {@code unknown}. v1 의 {@code warning}/{@code safe} 는 판정을 가치평가처럼 읽히게 해 교체했다.
+     *
+     * <p>기준선이 {@code null}(성향 미측정)이면 임의의 기본값을 채우지 않고 {@code unknown} 을 낸다
+     * (FR-IS-06). 외화자산이 0 이어도 마찬가지로 {@code unknown} 이며 주력 통화·비중은 {@code null} 이다
+     * — 0 으로 그린 차트가 아니라 빈 상태를 클라이언트가 그린다(FR-CM-09).
+     *
+     * <p>기준선 비교는 <b>반올림 전 정확한 비중</b>으로 한다. 이전 구현은 4자리 반올림 후 비교해
+     * 0.60004 가 0.6000 으로 접혀 기준선 초과를 놓쳤다. 응답에 싣는 {@code topShare}·{@code exposure}
+     * 만 4자리로 반올림한다(명세 §1.4 비율 표기).
+     *
+     * @param currencyToAssetKrw     통화코드 → 금액(원화)의 맵
+     * @param concentrationThreshold 성향별 집중도 기준선(0~1). 미측정이면 {@code null}
      * @return 집중도 진단 결과
-     * @throws IllegalArgumentException 입력값이 부적절한 경우
+     * @throws IllegalArgumentException 기준선이 0~1 범위를 벗어난 경우
      */
     public ConcentrationResult diagnose(
             Map<String, Long> currencyToAssetKrw,
-            double concentrationThreshold) {
+            Double concentrationThreshold) {
         Objects.requireNonNull(currencyToAssetKrw, "통화별 자산 맵은 null일 수 없습니다.");
 
-        if (concentrationThreshold < 0 || concentrationThreshold > 1) {
+        if (concentrationThreshold != null
+                && (concentrationThreshold < 0 || concentrationThreshold > 1)) {
             throw new IllegalArgumentException(
                     "집중도 임계값은 0~1 범위여야 합니다 (입력 " + concentrationThreshold + ").");
         }
@@ -153,9 +172,10 @@ public class ConcentrationCalculator {
             return new ConcentrationResult(
                     Collections.emptyMap(),
                     null,
-                    0.0,
+                    null,
                     concentrationThreshold,
-                    "safe",
+                    null,
+                    UNKNOWN,
                     0L
             );
         }
@@ -163,33 +183,44 @@ public class ConcentrationCalculator {
         // 통화별 비중 계산
         Map<String, Double> exposureMap = new LinkedHashMap<>();
         String topCurrency = null;
+        double topExactShare = -1.0;
         double topShare = 0.0;
 
         for (Map.Entry<String, Long> entry : currencyToAssetKrw.entrySet()) {
             String currency = entry.getKey();
             long assetKrw = entry.getValue();
 
+            double exactShare = (double) assetKrw / totalFxAssetKrw;
             double share = BigDecimal.valueOf(assetKrw)
                     .divide(BigDecimal.valueOf(totalFxAssetKrw), PRECISION_SCALE, RoundingMode.HALF_UP)
                     .doubleValue();
 
             exposureMap.put(currency, share);
 
-            // 주력 통화 찾기
-            if (share > topShare) {
+            // 주력 통화 찾기 — 반올림 전 값으로 비교한다.
+            if (exactShare > topExactShare) {
+                topExactShare = exactShare;
                 topShare = share;
                 topCurrency = currency;
             }
         }
 
-        // 임계값 비교하여 상태 결정
-        String status = topShare > concentrationThreshold ? "warning" : "safe";
+        String status = concentrationThreshold == null
+                ? UNKNOWN
+                : (topExactShare > concentrationThreshold ? ABOVE_THRESHOLD : WITHIN_THRESHOLD);
+
+        Double gapPp = concentrationThreshold == null
+                ? null
+                : BigDecimal.valueOf(topShare - concentrationThreshold)
+                        .setScale(PRECISION_SCALE, RoundingMode.HALF_UP)
+                        .doubleValue();
 
         return new ConcentrationResult(
                 exposureMap,
                 topCurrency,
                 topShare,
                 concentrationThreshold,
+                gapPp,
                 status,
                 totalFxAssetKrw
         );
@@ -228,12 +259,22 @@ public class ConcentrationCalculator {
                 );
     }
 
-    /** 집중도 진단 결과 DTO. */
+    /**
+     * 집중도 진단 결과 DTO.
+     *
+     * @param topCurrency 주력 통화. 외화자산이 없으면 {@code null}
+     * @param topShare    주력 통화 비중(0~1, 4자리). 외화자산이 없으면 {@code null}
+     * @param threshold   성향별 기준선. 성향 미측정이면 {@code null}
+     * @param gapPp       주력 통화 비중 − 기준선 (명세 §5.5 {@code relation.facts.gap_pp}).
+     *                    기준선이나 주력 통화가 없으면 {@code null}
+     * @param status      {@link #ABOVE_THRESHOLD} / {@link #WITHIN_THRESHOLD} / {@link #UNKNOWN}
+     */
     public record ConcentrationResult(
             Map<String, Double> exposure,
             String topCurrency,
-            double topShare,
-            double threshold,
+            Double topShare,
+            Double threshold,
+            Double gapPp,
             String status,
             long totalFxAssetKrw
     ) {

@@ -1,8 +1,6 @@
 package com.divurve.engine.plan;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -205,41 +203,6 @@ class PlanCalculatorTest {
         void parameterized(double prob, int total, int remaining, double expected) {
             double result = PlanCalculator.calculateAchieveProbAfterSkip(prob, total, remaining);
             assertEquals(expected, result, EPSILON);
-        }
-    }
-
-    @Nested
-    @DisplayName("shouldTriggerSafeMode")
-    class ShouldTriggerSafeModeTest {
-
-        @Test
-        @DisplayName("연속 3회 건너뛰면 true")
-        void triggerAtThree() {
-            assertTrue(PlanCalculator.shouldTriggerSafeMode(3));
-        }
-
-        @Test
-        @DisplayName("연속 4회 이상 건너뛰면 true")
-        void triggerAtFour() {
-            assertTrue(PlanCalculator.shouldTriggerSafeMode(4));
-        }
-
-        @Test
-        @DisplayName("연속 2회 건너뛰면 false")
-        void notTriggerAtTwo() {
-            assertFalse(PlanCalculator.shouldTriggerSafeMode(2));
-        }
-
-        @Test
-        @DisplayName("연속 0회는 false")
-        void notTriggerAtZero() {
-            assertFalse(PlanCalculator.shouldTriggerSafeMode(0));
-        }
-
-        @Test
-        @DisplayName("연속 1회는 false")
-        void notTriggerAtOne() {
-            assertFalse(PlanCalculator.shouldTriggerSafeMode(1));
         }
     }
 }

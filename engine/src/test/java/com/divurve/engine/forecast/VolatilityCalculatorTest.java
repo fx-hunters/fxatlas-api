@@ -56,8 +56,9 @@ class VolatilityCalculatorTest {
     @Test
     void testCalculatePercentile5y_HappyPath() {
         List<Double> returns = createLongReturnsSequence(5 * 252 + 30, 0.01);
-        int percentile = VolatilityCalculator.calculatePercentile5y(returns);
-        assertTrue(percentile >= 0 && percentile <= 100);
+        double percentile = VolatilityCalculator.calculatePercentile5y(returns);
+        // ERD fx_stats.vol_percentile_5y 는 NUMERIC(5,4) — 0~100 정수가 아니라 0~1 비율이다.
+        assertTrue(percentile >= 0.0 && percentile <= 1.0);
     }
 
     @Test
@@ -69,8 +70,8 @@ class VolatilityCalculatorTest {
     @Test
     void testCalculatePercentile5y_LowVolatility() {
         List<Double> returns = createLongReturnsSequence(5 * 252 + 30, 0.001);
-        int percentile = VolatilityCalculator.calculatePercentile5y(returns);
-        assertTrue(percentile < 50); // 낮은 변동성은 낮은 백분위
+        double percentile = VolatilityCalculator.calculatePercentile5y(returns);
+        assertTrue(percentile < 0.5); // 낮은 변동성은 낮은 백분위
     }
 
     @Test
@@ -84,33 +85,30 @@ class VolatilityCalculatorTest {
         for (int i = 0; i < 30; i++) {
             returns.add(0.02 + Math.sin(i * 0.2) * 0.01);
         }
-        int percentile = VolatilityCalculator.calculatePercentile5y(returns);
-        assertTrue(percentile >= 0 && percentile <= 100); // 백분위는 유효한 범위 내
+        double percentile = VolatilityCalculator.calculatePercentile5y(returns);
+        assertTrue(percentile >= 0.0 && percentile <= 1.0); // 백분위는 유효한 범위 내
     }
 
+    /**
+     * 반환 단위가 0~1 비율인지 고정한다 (calc: 정수 0~100 → 비율 0~1).
+     *
+     * <p>마지막 30일만 변동성이 크면 5년 롤링 변동성이 거의 전부 현재값보다 낮다.
+     * 변경 전 구현이었다면 같은 입력에 {@code 100} 에 가까운 정수가 나왔다.
+     */
     @Test
-    void testClassifyRegime_Low() {
-        assertEquals("Low", VolatilityCalculator.classifyRegime(20));
-    }
+    void testCalculatePercentile5y_ReturnsRatioNotIntegerPercent() {
+        List<Double> returns = new ArrayList<>();
+        for (int i = 0; i < 5 * 252; i++) {
+            returns.add(0.0);
+        }
+        for (int i = 0; i < 30; i++) {
+            returns.add(i % 2 == 0 ? 0.05 : -0.05);
+        }
 
-    @Test
-    void testClassifyRegime_Normal() {
-        assertEquals("Normal", VolatilityCalculator.classifyRegime(50));
-    }
+        double percentile = VolatilityCalculator.calculatePercentile5y(returns);
 
-    @Test
-    void testClassifyRegime_High() {
-        assertEquals("High", VolatilityCalculator.classifyRegime(80));
-    }
-
-    @Test
-    void testClassifyRegime_Boundary33() {
-        assertEquals("Normal", VolatilityCalculator.classifyRegime(33));
-    }
-
-    @Test
-    void testClassifyRegime_Boundary67() {
-        assertEquals("High", VolatilityCalculator.classifyRegime(67));
+        assertTrue(percentile > 0.9 && percentile <= 1.0,
+            "0~1 비율이어야 한다(정수 백분위였다면 90 이상): " + percentile);
     }
 
     private List<Double> createLongReturnsSequence(int count, double value) {

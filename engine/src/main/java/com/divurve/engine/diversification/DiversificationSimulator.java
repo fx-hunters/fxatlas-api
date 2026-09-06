@@ -106,6 +106,63 @@ public class DiversificationSimulator {
     }
 
     /**
+     * 통화 비중을 가정해서 바꿨을 때의 <b>통화별 원화 금액표</b>를 만든다
+     * (FR-FT-03, 명세 §5.6 {@code POST /fit/preview}).
+     *
+     * <p>대상 통화를 {@code deltaShare} 만큼 올리고(내리고) 나머지 통화는 <b>비례 재배분</b>한다.
+     * 외화자산 총액은 고정 — 저장하지 않는 "가정"이다. 변동성·상관계수는 쓰지 않으므로
+     * 임의 상수(0.12/0.14/0.10, ρ=0.5)에 의존하던 경로를 대체한다.
+     *
+     * <p>비중이 아니라 금액을 돌려주는 이유: 비중을 4자리로 반올림한 뒤 금액으로 되돌리면
+     * 합이 외화자산 총액과 어긋나 {@code sensitivity_1pct.total_krw} 가 변한다(명세 §5.6 은
+     * 가정 전후의 합계가 같음을 보인다). 반올림 잔차는 <b>가장 큰 통화</b>에 몰아 총액을 정확히 보존한다.
+     *
+     * @param currencyToAssetKrw 통화코드 → 금액(원화)
+     * @param targetCurrency     가정을 적용할 통화
+     * @param deltaShare         비중 변화량 (양수 증가, 음수 감소)
+     * @return 재배분된 통화별 원화 금액. 합계는 입력 합계와 정확히 같다
+     * @throws IllegalArgumentException 외화자산이 0이거나, 대상 통화가 없거나,
+     *                                  조정 후 비중이 0~1 범위를 벗어나는 경우
+     */
+    public Map<String, Long> redistributeAmounts(
+            Map<String, Long> currencyToAssetKrw,
+            String targetCurrency,
+            double deltaShare) {
+        Objects.requireNonNull(currencyToAssetKrw, "통화별 자산 맵은 null일 수 없습니다.");
+        Objects.requireNonNull(targetCurrency, "조정 대상 통화는 null일 수 없습니다.");
+
+        long total = currencyToAssetKrw.values().stream().mapToLong(Long::longValue).sum();
+        if (total <= 0L) {
+            throw new IllegalArgumentException("외화자산이 없어 비중 가정을 적용할 수 없습니다.");
+        }
+
+        Map<String, Double> shares = new LinkedHashMap<>();
+        currencyToAssetKrw.forEach((currency, krw) -> shares.put(currency, (double) krw / total));
+
+        Map<String, Double> adjusted = adjustShare(shares, targetCurrency, deltaShare);
+
+        Map<String, Long> amounts = new LinkedHashMap<>();
+        adjusted.forEach((currency, share) -> amounts.put(currency, Math.round(share * total)));
+
+        return absorbRoundingDrift(amounts, total);
+    }
+
+    /** 반올림 잔차를 금액이 가장 큰 통화에 흡수시켜 합계를 정확히 보존한다. */
+    private Map<String, Long> absorbRoundingDrift(Map<String, Long> amounts, long total) {
+        long drift = total - amounts.values().stream().mapToLong(Long::longValue).sum();
+        if (drift == 0L) {
+            return amounts;
+        }
+
+        String largest = amounts.entrySet().stream()
+                .max(Map.Entry.comparingByValue())
+                .orElseThrow()
+                .getKey();
+        amounts.put(largest, amounts.get(largest) + drift);
+        return amounts;
+    }
+
+    /**
      * 비중을 조정한다. 다른 통화의 비중은 비례적으로 조정하여 합이 1이 되도록 한다.
      */
     private Map<String, Double> adjustShare(

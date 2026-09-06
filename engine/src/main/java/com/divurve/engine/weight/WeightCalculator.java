@@ -15,7 +15,9 @@ import java.util.Map;
 public class WeightCalculator {
 
     private static final int PRECISION_SCALE = 4;
-    private static final int PERCENT_SCALE = 2;
+
+    /** 환율 1퍼센트 변동. */
+    private static final BigDecimal ONE_PERCENT = new BigDecimal("0.01");
 
     /**
      * 총자산 대비 외화 비중을 계산한다.
@@ -82,9 +84,45 @@ public class WeightCalculator {
         return result;
     }
 
+    /**
+     * 환율 1퍼센트 변동 시 원화 평가금액 변화를 통화별·합계로 계산한다 (FR-XR-05, 명세 §5.3).
+     *
+     * <p>부호 규약(FR-CM-05)에 따라 <b>외화 강세(+1%) 기준</b>이므로 값은 통화 원화금액의 1퍼센트다.
+     * 이 계산은 이전에 {@code XrayController} 안에 있었다 — 수치는 engine 만 만든다(CLAUDE.md §1).
+     *
+     * @param currencyToAssetKrw 통화코드 → 금액(원화)의 맵
+     * @return 통화별 민감도와 합계 (원 단위, HALF_UP 반올림)
+     * @throws IllegalArgumentException 통화 금액이 음수인 경우
+     */
+    public Sensitivity calculateSensitivity1pct(Map<String, Long> currencyToAssetKrw) {
+        Map<String, Long> byCurrency = new LinkedHashMap<>();
+        long total = 0L;
+
+        for (Map.Entry<String, Long> entry : currencyToAssetKrw.entrySet()) {
+            validateNonNegative(entry.getValue(), "통화자산");
+            long impact = BigDecimal.valueOf(entry.getValue())
+                    .multiply(ONE_PERCENT)
+                    .setScale(0, RoundingMode.HALF_UP)
+                    .longValue();
+            byCurrency.put(entry.getKey(), impact);
+            total += impact;
+        }
+
+        return new Sensitivity(total, byCurrency);
+    }
+
     private void validateNonNegative(long value, String fieldName) {
         if (value < 0L) {
             throw new IllegalArgumentException(fieldName + "은 음수일 수 없습니다 (입력 " + value + ").");
         }
+    }
+
+    /**
+     * 환율 1퍼센트 민감도.
+     *
+     * @param totalKrw   전 통화 합계 (원)
+     * @param byCurrency 통화코드 → 민감도(원). 입력 순서를 유지한다
+     */
+    public record Sensitivity(long totalKrw, Map<String, Long> byCurrency) {
     }
 }
