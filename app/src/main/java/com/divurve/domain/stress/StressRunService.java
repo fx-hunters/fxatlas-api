@@ -4,16 +4,15 @@ import com.divurve.common.architecture.UseCase;
 import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
 import com.divurve.domain.holding.DepositRepository;
+import com.divurve.domain.holding.FxAssetValuator;
 import com.divurve.domain.holding.HoldingRepository;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
-import com.divurve.domain.port.FxRateProvider;
 import com.divurve.domain.stress.entity.StressScenario;
 import com.divurve.domain.stress.entity.StressTestRun;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
 import com.divurve.engine.stress.StressCalculator;
-import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.time.Clock;
@@ -50,9 +49,8 @@ public class StressRunService {
     private final UserRepository userRepository;
     private final HoldingRepository holdingRepository;
     private final DepositRepository depositRepository;
-    private final FxRateProvider fxRateProvider;
+    private final FxAssetValuator fxAssetValuator;
     private final StressCalculator stressCalculator;
-    private final QuoteUnitNormalizer quoteUnitNormalizer;
     private final Clock clock;
 
     public StressRunService(
@@ -61,18 +59,16 @@ public class StressRunService {
             UserRepository userRepository,
             HoldingRepository holdingRepository,
             DepositRepository depositRepository,
-            FxRateProvider fxRateProvider,
+            FxAssetValuator fxAssetValuator,
             StressCalculator stressCalculator,
-            QuoteUnitNormalizer quoteUnitNormalizer,
             Clock clock) {
         this.scenarioRepository = Objects.requireNonNull(scenarioRepository, "scenarioRepository");
         this.runRepository = Objects.requireNonNull(runRepository, "runRepository");
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository");
         this.holdingRepository = Objects.requireNonNull(holdingRepository, "holdingRepository");
         this.depositRepository = Objects.requireNonNull(depositRepository, "depositRepository");
-        this.fxRateProvider = Objects.requireNonNull(fxRateProvider, "fxRateProvider");
+        this.fxAssetValuator = Objects.requireNonNull(fxAssetValuator, "fxAssetValuator");
         this.stressCalculator = Objects.requireNonNull(stressCalculator, "stressCalculator");
-        this.quoteUnitNormalizer = Objects.requireNonNull(quoteUnitNormalizer, "quoteUnitNormalizer");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -179,10 +175,17 @@ public class StressRunService {
         List<Holding> holdings = holdingRepository.findByOwner_Id(userId);
         List<Deposit> deposits = depositRepository.findByOwner_Id(userId);
 
-        Map<String, BigDecimal> perUnitRates = new HashMap<>();
+        // 환율을 못 구한 통화는 빠진다 — /xray 와 같은 규약이다(이슈 #57).
+        // 예전에는 이 서비스만 예외를 그대로 올려, GBP 보유 사용자는 스트레스 실행이 400 이었다.
+        Map<String, BigDecimal> perUnitRates =
+                fxAssetValuator.fetchPerUnitRates(holdings, deposits);
+
         long equityAssetKrw = 0L;
         for (Holding holding : holdings) {
-            BigDecimal rate = perUnitRate(perUnitRates, holding.getCurrencyCode());
+            BigDecimal rate = perUnitRates.get(holding.getCurrencyCode());
+            if (rate == null) {
+                continue;
+            }
             equityAssetKrw += BigDecimal.valueOf(holding.getQuantity() * holding.getAvgPrice())
                     .multiply(rate)
                     .setScale(0, RoundingMode.HALF_UP)
@@ -191,7 +194,10 @@ public class StressRunService {
 
         long depositKrw = 0L;
         for (Deposit deposit : deposits) {
-            BigDecimal rate = perUnitRate(perUnitRates, deposit.getCurrencyCode());
+            BigDecimal rate = perUnitRates.get(deposit.getCurrencyCode());
+            if (rate == null) {
+                continue;
+            }
             depositKrw += deposit.getAmount()
                     .multiply(rate)
                     .setScale(0, RoundingMode.HALF_UP)
@@ -199,11 +205,6 @@ public class StressRunService {
         }
 
         return new Assets(equityAssetKrw, equityAssetKrw + depositKrw);
-    }
-
-    private BigDecimal perUnitRate(Map<String, BigDecimal> cache, String currencyCode) {
-        return cache.computeIfAbsent(currencyCode, code -> quoteUnitNormalizer.toPerUnitRate(
-                code, fxRateProvider.fetchLatest(code + "_KRW").rate()));
     }
 
     private static ScenarioSummary toScenarioSummary(StressScenario scenario) {
