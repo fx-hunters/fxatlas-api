@@ -26,6 +26,9 @@ class StubEndpointsTest {
     // forecast 는 실구현되어 이 스텁 목록에서 제외 — ForecastControllerTest 가 매핑을 검증한다.
     // xray/fit 은 이슈 #14에서 실구현되어 이 스텁 목록에서 제외 — XrayControllerTest/FitControllerTest 가 매핑을 검증한다.
     private final ForecastController forecast = new ForecastController();
+    private final GoalController goal = new GoalController();
+    // plan.preview() 는 실구현되었으므로 스텁 목록에서 제외 — PlanControllerTest 가 검증한다.
+    // 남은 스텁(createPlan/listPlanVersions/getActivePlan/completeStep/skipStep)은 서비스를 건드리지 않으므로 null 로 충분.
     // goals 는 실구현되어 이 스텁 목록에서 제외 — GoalControllerTest 가 매핑을 검증한다.
     private final PlanController plan = new PlanController();
     // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
@@ -52,6 +55,12 @@ class StubEndpointsTest {
                 () -> forecast.getFactors(null),
                 () -> forecast.getModelPerformance(null, null),
                 forecast::getEvents,
+                // Goal
+                goal::listGoals,
+                () -> goal.createGoal(null),
+                () -> goal.getGoal("id"),
+                () -> goal.updateGoal("id", null),
+                () -> goal.deleteGoal("id"),
                 // Plan
                 () -> plan.preview(null),
                 () -> plan.createPlan("id", null),
