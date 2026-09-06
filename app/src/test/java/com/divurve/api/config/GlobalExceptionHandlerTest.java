@@ -19,6 +19,7 @@ import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.validation.BindingResult;
 import org.springframework.validation.FieldError;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -150,6 +151,18 @@ class GlobalExceptionHandlerTest {
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
         assertThat(response.getBody().error().code()).isEqualTo("DUPLICATE_RESOURCE");
         assertThat(response.getBody().error().message()).doesNotContain("uk_fx_deposits");
+    }
+
+    @Test
+    void Content_Type_이_없거나_지원하지_않으면_400_VALIDATION_FAILED_이다() {
+        ResponseEntity<ErrorResponse> response = handler.handleUnsupportedMediaType(
+                new HttpMediaTypeNotSupportedException(
+                        org.springframework.http.MediaType.APPLICATION_FORM_URLENCODED,
+                        List.of(org.springframework.http.MediaType.APPLICATION_JSON)));
+
+        assertThat(response.getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(response.getBody().error().code()).isEqualTo("VALIDATION_FAILED");
+        assertThat(response.getBody().error().field()).isNull();
     }
 
     @Test
