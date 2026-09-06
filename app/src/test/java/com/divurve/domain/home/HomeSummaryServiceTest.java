@@ -70,7 +70,7 @@ class HomeSummaryServiceTest {
     }
 
     private void stubUserExists() {
-        User user = User.create("test@example.com", "테스트사용자", null, null);
+        User user = User.create("test@example.com", "테스트사용자", null);
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
     }
 
@@ -248,7 +248,7 @@ class HomeSummaryServiceTest {
         when(forecastService.getForecast(userId, "USDKRW", ForecastService.DEFAULT_HORIZON_DAYS))
                 .thenReturn(forecastView());
         when(forecastService.getEvents()).thenReturn(List.of());
-        Goal goal = Goal.builder(User.create("a@b.com", "u", null, null), "여행자금", "wealth", "travel", "USD")
+        Goal goal = Goal.builder(User.create("a@b.com", "u", null), "여행자금", "wealth", "travel", "USD")
                 .targetAmount(1000.0)
                 .build();
         goal.setIdForTest(UUID.randomUUID());

@@ -16,7 +16,6 @@ import org.hibernate.generator.EventType;
  * 테이블 {@code users} 에 매핑된다. id/created_at 은 저장 시점에 DB 가 채운다.
  *
  * 회원가입 유저는 passwordHash를 가지며, 데모 유저는 null이다(로그인 불가).
- * onboardingPurpose는 온보딩 시 선택한 투자 목적(OVERSEAS_INVESTMENT 또는 FOREIGN_CURRENCY_GOAL).
  *
  * <p>{@code onboarded_at} 이 NULL 이면 초기 설정으로 보낸다(ERD v3.0 §4.B, FR-IS-01·FR-IS-07).
  * {@code POST /me/onboarding/complete} 가 이 값을 기록하며, 전부 건너뛰어도 호출 가능하다(FR-IS-05).
@@ -40,9 +39,6 @@ public class User {
     @Column(name = "password_hash")
     private String passwordHash;
 
-    @Column(name = "onboarding_purpose")
-    private String onboardingPurpose;
-
     @Column(name = "is_demo", nullable = false)
     private boolean isDemo;
 
@@ -57,11 +53,10 @@ public class User {
     protected User() {
     }
 
-    private User(String email, String name, String passwordHash, String onboardingPurpose, boolean isDemo) {
+    private User(String email, String name, String passwordHash, boolean isDemo) {
         this.email = email;
         this.name = name;
         this.passwordHash = passwordHash;
-        this.onboardingPurpose = onboardingPurpose;
         this.isDemo = isDemo;
     }
 
@@ -70,14 +65,14 @@ public class User {
      * 둘러보기 계정은 샘플 자산이 이미 채워진 상태로 시작하므로 초기 설정을 완료한 것으로 표시한다(FR-IS-09).
      */
     public static User createDemo(String email, String name) {
-        User demo = new User(email, name, null, null, true);
+        User demo = new User(email, name, null, true);
         demo.onboardedAt = Instant.now();
         return demo;
     }
 
     /** 일반 회원가입 유저를 만들 때 사용하는 팩토리. id/created_at 은 저장 시점에 DB 가 채운다. */
-    public static User create(String email, String name, String passwordHash, String onboardingPurpose) {
-        return new User(email, name, passwordHash, onboardingPurpose, false);
+    public static User create(String email, String name, String passwordHash) {
+        return new User(email, name, passwordHash, false);
     }
 
     public UUID getId() {
@@ -94,10 +89,6 @@ public class User {
 
     public String getPasswordHash() {
         return passwordHash;
-    }
-
-    public String getOnboardingPurpose() {
-        return onboardingPurpose;
     }
 
     public boolean isDemo() {

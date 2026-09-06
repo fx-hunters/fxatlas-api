@@ -44,19 +44,18 @@ class AuthServiceTest {
         String email = "user@example.com";
         String password = "password123";
         String name = "User Name";
-        String purpose = "OVERSEAS_INVESTMENT";
         UUID userId = UUID.randomUUID();
 
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
         // save() 가 돌려주는 것은 JPA 가 id 를 채운 엔티티다. 단위테스트에서는 리플렉션으로 주입한다.
-        User savedUser = User.create(email, name, "hashed", purpose);
+        User savedUser = User.create(email, name, "hashed");
         assignId(savedUser, userId);
         when(userRepository.save(any(User.class))).thenReturn(savedUser);
 
         AuthTokens expectedTokens = new AuthTokens("access", "refresh", 1800);
         when(tokenProvider.issue(userId, false)).thenReturn(expectedTokens);
 
-        AuthTokens result = authService.signup(email, password, name, purpose);
+        AuthTokens result = authService.signup(email, password, name);
 
         assertThat(result.accessToken()).isEqualTo("access");
         assertThat(result.refreshToken()).isEqualTo("refresh");
@@ -70,42 +69,34 @@ class AuthServiceTest {
         String email = "user@example.com";
         String password = "password123";
         String name = "User Name";
-        String purpose = "OVERSEAS_INVESTMENT";
 
-        User existingUser = User.create(email, name, "hashed", purpose);
+        User existingUser = User.create(email, name, "hashed");
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(existingUser));
 
-        assertThatThrownBy(() -> authService.signup(email, password, name, purpose))
+        assertThatThrownBy(() -> authService.signup(email, password, name))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Email already exists");
     }
 
     @Test
     void signup_emailNull() {
-        assertThatThrownBy(() -> authService.signup(null, "password", "name", "PURPOSE"))
+        assertThatThrownBy(() -> authService.signup(null, "password", "name"))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("email must not be null");
     }
 
     @Test
     void signup_passwordNull() {
-        assertThatThrownBy(() -> authService.signup("email@example.com", null, "name", "PURPOSE"))
+        assertThatThrownBy(() -> authService.signup("email@example.com", null, "name"))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("password must not be null");
     }
 
     @Test
     void signup_nameNull() {
-        assertThatThrownBy(() -> authService.signup("email@example.com", "password", null, "PURPOSE"))
+        assertThatThrownBy(() -> authService.signup("email@example.com", "password", null))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessage("name must not be null");
-    }
-
-    @Test
-    void signup_purposeNull() {
-        assertThatThrownBy(() -> authService.signup("email@example.com", "password", "name", null))
-                .isInstanceOf(NullPointerException.class)
-                .hasMessage("onboardingPurpose must not be null");
     }
 
     @Test
@@ -114,7 +105,7 @@ class AuthServiceTest {
         String password = "password123";
         String passwordHash = new BCryptPasswordEncoder().encode(password);
 
-        User user = User.create(email, "User Name", passwordHash, "OVERSEAS_INVESTMENT");
+        User user = User.create(email, "User Name", passwordHash);
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(tokenProvider.issue(user.getId(), false)).thenReturn(new AuthTokens("access", "refresh", 1800));
 
@@ -134,7 +125,7 @@ class AuthServiceTest {
         String password = "password123";
         String passwordHash = new BCryptPasswordEncoder().encode(password);
 
-        User user = User.create(email, "User Name", passwordHash, "OVERSEAS_INVESTMENT");
+        User user = User.create(email, "User Name", passwordHash);
         user.completeOnboarding(Instant.parse("2026-09-01T15:30:00Z"));
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
         when(tokenProvider.issue(user.getId(), false)).thenReturn(new AuthTokens("access", "refresh", 1800));
@@ -161,7 +152,7 @@ class AuthServiceTest {
         String wrongPassword = "wrongpassword";
         String passwordHash = new BCryptPasswordEncoder().encode(password);
 
-        User user = User.create(email, "User Name", passwordHash, "OVERSEAS_INVESTMENT");
+        User user = User.create(email, "User Name", passwordHash);
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.login(email, wrongPassword))
@@ -192,7 +183,7 @@ class AuthServiceTest {
                 .thenReturn(Optional.of(new AuthPrincipal(userId, false)));
         when(tokenProvider.issue(userId, false)).thenReturn(new AuthTokens("new_access", "refresh", 1800));
 
-        User user = User.create("user@example.com", "User Name", "hashed", "OVERSEAS_INVESTMENT");
+        User user = User.create("user@example.com", "User Name", "hashed");
         user.completeOnboarding(Instant.parse("2026-09-01T15:30:00Z"));
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
 
