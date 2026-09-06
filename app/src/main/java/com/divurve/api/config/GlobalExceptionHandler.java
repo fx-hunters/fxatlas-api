@@ -8,6 +8,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.HttpMediaTypeNotSupportedException;
 import org.springframework.web.HttpRequestMethodNotSupportedException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.MissingServletRequestParameterException;
@@ -85,6 +86,26 @@ public class GlobalExceptionHandler {
     public ResponseEntity<ErrorResponse> handleIllegalArgument(IllegalArgumentException ex) {
         log.debug("잘못된 인자", ex);
         return badRequest("요청 값이 올바르지 않습니다.", null);
+    }
+
+    /**
+     * {@code Content-Type} 이 없거나 서버가 읽을 수 없는 값(415) → 400 {@code VALIDATION_FAILED}.
+     *
+     * <p>명세 §1.3 의 코드 집합은 6종으로 닫혀 있어 415 에 대응하는 코드가 없다({@link
+     * #handleUnknownEndpoint} 가 405 를 404 로 접는 것과 같은 이유). 클라이언트가 보낸 요청 자체의
+     * 형식 문제이므로 "요청 값이 올바르지 않다"는 의미로 400 하나로 모은다. 프레임워크가 원문 메시지에
+     * 지원 미디어 타입 목록을 담지만, 그대로 응답에 싣지 않고 로그로만 남긴다.
+     *
+     * <p>자매 예외인 {@link org.springframework.web.HttpMediaTypeNotAcceptableException}(406,
+     * {@code Accept} 헤더 불일치)은 여기서 다루지 않는다 — 그 예외는 응답을 <b>쓰는</b> 단계에서
+     * 발생하므로, 이 핸들러가 만드는 에러 본문도 같은 협상을 다시 거쳐야 한다. Accept 가 JSON을 배제하면
+     * 에러 응답조차 쓸 수 없어 예외가 다시 발생하고, Spring 기본 리졸버가 그 두 번째 예외를 잡아 이미
+     * 순수 406(본문 없음)으로 정상 종료한다 — 500 으로 새지 않으므로 이 이슈의 대상이 아니다.
+     */
+    @ExceptionHandler(HttpMediaTypeNotSupportedException.class)
+    public ResponseEntity<ErrorResponse> handleUnsupportedMediaType(HttpMediaTypeNotSupportedException ex) {
+        log.debug("지원하지 않는 Content-Type", ex);
+        return badRequest("요청 헤더의 Content-Type 값을 지원하지 않습니다.", null);
     }
 
     /** DB 제약 위반(유니크 등) → 409. SQL 원문·제약명은 노출하지 않는다. */
