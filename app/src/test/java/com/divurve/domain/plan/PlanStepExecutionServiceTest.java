@@ -125,6 +125,7 @@ class PlanStepExecutionServiceTest {
                     plan, 4, LocalDate.of(2024, 4, 1), 2500.0, 0.0,
                     PlanStepStatus.PENDING);
 
+            when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
                     .thenReturn(Optional.of(step1));
             when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId))
@@ -161,6 +162,7 @@ class PlanStepExecutionServiceTest {
                     plan, 4, LocalDate.of(2024, 4, 1), 2500.0, 0.0,
                     PlanStepStatus.PENDING);
 
+            when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
                     .thenReturn(Optional.of(step3));
             when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId))
@@ -182,12 +184,24 @@ class PlanStepExecutionServiceTest {
         void stepNotFound() {
             // Given
             int seq = 1;
+            when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
                     .thenReturn(Optional.empty());
 
             // When, Then
             assertThrows(IllegalArgumentException.class, () ->
                 service.skipStep(planId, seq, 10000.0));
+        }
+
+        @Test
+        @DisplayName("계획을 찾을 수 없으면 예외 발생")
+        void planNotFound() {
+            // Given
+            when(planRepository.findById(planId)).thenReturn(Optional.empty());
+
+            // When, Then
+            assertThrows(IllegalArgumentException.class, () ->
+                service.skipStep(planId, 1, 10000.0));
         }
 
         @Test
@@ -208,6 +222,7 @@ class PlanStepExecutionServiceTest {
                     plan, 4, LocalDate.of(2024, 4, 1), 1000.0, 0.0,
                     PlanStepStatus.PENDING);
 
+            when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
                     .thenReturn(Optional.of(step1));
             when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId))
@@ -224,6 +239,79 @@ class PlanStepExecutionServiceTest {
             assertEquals(1000.0, result.burdenBefore());
             assertEquals(expectedBurdenAfter, result.burdenAfter(), 1e-6);
             assertTrue(result.burdenIncreasePct() > 0);
+        }
+
+        @Test
+        @DisplayName("완료된 회차는 재분배 대상이 아니고 직전 회차가 완료면 연속 건너뛰기는 1")
+        void completedStepsAreNotRedistributed() {
+            // Given: 1회차 완료 → 2회차 건너뛰기 → 3회차 완료 → 4회차 대기
+            int seq = 2;
+            PlanStep step1 = PlanStep.create(
+                    plan, 1, LocalDate.of(2024, 1, 1), 1000.0, 1000.0,
+                    PlanStepStatus.COMPLETED);
+            PlanStep step2 = PlanStep.create(
+                    plan, 2, LocalDate.of(2024, 2, 1), 1000.0, 0.0,
+                    PlanStepStatus.PENDING);
+            PlanStep step3 = PlanStep.create(
+                    plan, 3, LocalDate.of(2024, 3, 1), 1000.0, 1000.0,
+                    PlanStepStatus.COMPLETED);
+            PlanStep step4 = PlanStep.create(
+                    plan, 4, LocalDate.of(2024, 4, 1), 1000.0, 0.0,
+                    PlanStepStatus.PENDING);
+
+            when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
+            when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
+                    .thenReturn(Optional.of(step2));
+            when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId))
+                    .thenReturn(List.of(step1, step2, step3, step4));
+            when(planStepRepository.save(any())).thenAnswer(invocation -> {
+                return invocation.getArgument(0);
+            });
+
+            // When
+            SkipResult result = service.skipStep(planId, seq, 4000.0);
+
+            // Then: 남은 금액 2000 을 남은 1회차(4회차)가 전부 떠안는다
+            assertEquals(2000.0, result.remainingAmount(), 1e-6);
+            assertEquals(1, result.remainingSteps());
+            assertEquals(2000.0, result.burdenAfter(), 1e-6);
+            assertEquals(2000.0, step4.getAmount(), 1e-6);
+            // 이미 완료된 3회차는 금액이 바뀌지 않는다
+            assertEquals(1000.0, step3.getAmount(), 1e-6);
+            // 직전 회차(1회차)가 완료 상태이므로 연속 건너뛰기는 1
+            assertEquals(1, result.consecutiveSkips());
+            assertFalse(result.safeModeTriggered());
+        }
+
+        @Test
+        @DisplayName("남은 회차가 없으면 부담은 0 이 된다")
+        void noRemainingStepsMeansZeroBurden() {
+            // Given: 1회차 완료, 2회차(마지막)를 건너뛴다
+            int seq = 2;
+            PlanStep step1 = PlanStep.create(
+                    plan, 1, LocalDate.of(2024, 1, 1), 1000.0, 1000.0,
+                    PlanStepStatus.COMPLETED);
+            PlanStep step2 = PlanStep.create(
+                    plan, 2, LocalDate.of(2024, 2, 1), 1000.0, 0.0,
+                    PlanStepStatus.PENDING);
+
+            when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
+            when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
+                    .thenReturn(Optional.of(step2));
+            when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId))
+                    .thenReturn(List.of(step1, step2));
+            when(planStepRepository.save(any())).thenAnswer(invocation -> {
+                return invocation.getArgument(0);
+            });
+
+            // When
+            SkipResult result = service.skipStep(planId, seq, 2000.0);
+
+            // Then
+            assertEquals(0, result.remainingSteps());
+            assertEquals(1000.0, result.remainingAmount(), 1e-6);
+            assertEquals(0.0, result.burdenAfter(), 1e-6);
+            assertEquals(0.0, result.burdenIncreasePct(), 1e-6);
         }
     }
 }

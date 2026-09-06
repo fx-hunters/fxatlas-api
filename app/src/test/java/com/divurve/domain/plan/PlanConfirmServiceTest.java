@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -210,7 +211,7 @@ class PlanConfirmServiceTest {
             service.savePlanSteps(planId, steps);
 
             // Then
-            verify(planStepRepository).save(any(PlanStep.class));
+            verify(planStepRepository, times(steps.size())).save(any(PlanStep.class));
         }
 
         @Test
