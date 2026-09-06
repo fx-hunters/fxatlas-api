@@ -12,11 +12,28 @@ server:
 # jwt-secret 은 운영에서 반드시 JWT_SECRET 환경변수로 주입한다(HS256, 32바이트 이상).
 # 로컬 폴백은 개발 전용 값이므로 그대로 배포하지 않는다.
 # access 30분(1800s)·refresh 14일(1209600s) — NFR-SE-02.
+
 app:
   auth:
     jwt-secret: ${JWT_SECRET:local-dev-insecure-jwt-secret-please-override-in-prod-0123456789}
     access-token-ttl-seconds: 1800
     refresh-token-ttl-seconds: 1209600
+  # 외부 데이터 인프라 (이슈 #12) — ECOS(환율)·FRED(거시지표)
+  # API 키는 운영에서 반드시 환경변수(ECOS_API_KEY / FRED_API_KEY)로 주입한다. 로컬 폴백 없음.
+  # NFR-DT-02: 환율=ECOS, 거시지표=FRED 를 1차 출처로 한다.
+  external:
+    ecos:
+      base-url: https://ecos.bok.or.kr/api
+      api-key: ${ECOS_API_KEY:}
+      stat-code: 731Y001   # 원/미달러 등 주요통화 대원화환율(일)
+      item-codes:
+        USD_KRW: "0000001"
+        JPY_KRW: "0000002"   # 100엔당
+        EUR_KRW: "0000003"
+        CNY_KRW: "0000053"
+    fred:
+      base-url: https://api.stlouisfed.org/fred
+      api-key: ${FRED_API_KEY:}
 
 spring:
   application:
@@ -51,6 +68,7 @@ spring:
     enabled: true
     locations: classpath:db/migration
     baseline-on-migrate: true
+
 
 # API 문서 (문서 6장)
 springdoc:
