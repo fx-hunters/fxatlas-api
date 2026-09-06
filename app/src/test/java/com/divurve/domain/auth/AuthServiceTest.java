@@ -3,6 +3,7 @@ package com.divurve.domain.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -44,7 +45,7 @@ class AuthServiceTest {
         when(userRepository.save(any(User.class))).thenReturn(User.create(email, name, "hashed", purpose));
 
         AuthTokens expectedTokens = new AuthTokens("access", "refresh", 1800);
-        when(tokenProvider.issue(any(UUID.class), false)).thenReturn(expectedTokens);
+        when(tokenProvider.issue(any(UUID.class), eq(false))).thenReturn(expectedTokens);
 
         AuthTokens result = authService.signup(email, password, name, purpose);
 
@@ -52,7 +53,7 @@ class AuthServiceTest {
         assertThat(result.refreshToken()).isEqualTo("refresh");
         verify(userRepository).findByEmail(email);
         verify(userRepository).save(any(User.class));
-        verify(tokenProvider).issue(any(UUID.class), false);
+        verify(tokenProvider).issue(any(UUID.class), eq(false));
     }
 
     @Test
