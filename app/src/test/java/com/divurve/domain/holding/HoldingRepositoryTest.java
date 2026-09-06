@@ -22,8 +22,8 @@ class HoldingRepositoryTest extends RepositoryTestBase {
 
     @Test
     void findByOwner_Id_는_소유자의_보유_종목만_반환한다() {
-        User alice = userRepository.save(User.create("alice@divurve.com", "앨리스", false));
-        User bob = userRepository.save(User.create("bob@divurve.com", "밥", false));
+        User alice = userRepository.save(User.createDemo("alice@divurve.com", "앨리스"));
+        User bob = userRepository.save(User.createDemo("bob@divurve.com", "밥"));
         holdingRepository.save(Holding.create(alice, "AAPL", "USD", 10.0, 150.0));
         holdingRepository.save(Holding.create(alice, "MSFT", "USD", 5.0, 300.0));
         holdingRepository.save(Holding.create(bob, "GOOG", "USD", 2.0, 120.0));
@@ -38,7 +38,7 @@ class HoldingRepositoryTest extends RepositoryTestBase {
 
     @Test
     void 저장한_보유_종목의_소유자_연관을_다시_조회할_수_있다() {
-        User owner = userRepository.save(User.create("carol@divurve.com", "캐럴", false));
+        User owner = userRepository.save(User.createDemo("carol@divurve.com", "캐럴"));
         Holding saved = holdingRepository.save(Holding.create(owner, "TSLA", "USD", 3.0, 200.0));
 
         assertThat(saved.getId()).isNotNull();
@@ -47,7 +47,7 @@ class HoldingRepositoryTest extends RepositoryTestBase {
 
     @Test
     void 매입_환율_컨텍스트를_보존한다() {
-        User owner = userRepository.save(User.create("dave@divurve.com", "데이브", false));
+        User owner = userRepository.save(User.createDemo("dave@divurve.com", "데이브"));
         Holding holding = Holding.create(owner, "NVDA", "USD", 1.0, 100.0);
         LocalDate purchasedAt = LocalDate.of(2025, 3, 10);
         holding.assignPurchaseContext(

@@ -37,8 +37,8 @@ class HoldingServiceTest {
 
     private final UUID userId = UUID.randomUUID();
     private final UUID otherUserId = UUID.randomUUID();
-    private final User user = User.create("me@divurve.com", "나", false);
-    private final User other = User.create("other@divurve.com", "타인", false);
+    private final User user = User.createDemo("me@divurve.com", "나");
+    private final User other = User.createDemo("other@divurve.com", "타인");
 
     private HoldingService service() {
         return new HoldingService(holdingRepository, userRepository, purchaseFxRateResolver);
