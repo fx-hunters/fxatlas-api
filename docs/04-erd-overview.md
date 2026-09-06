@@ -3,6 +3,465 @@
 > 원본: Notion「ERD · 데이터 모델 v3.0」(PostgreSQL 15, DDL 정본) — 경제 배경 없이 구현하는 개발자 대상 설명본.
 > ERD v3.0은 **7개 도메인 32개 테이블**. 시각은 전부 UTC로 저장하고 표시 시 Asia/Seoul로 변환한다. 시나리오: 사용자 `희찬`이 2027-03 유럽여행에 €3,000이 필요해 목표를 만들고 예산 500만원으로 6회 분할, 3회차까지 환전한 상태. 해외주식 `VOO` 12.5주 보유.
 
+## 0. DDL
+```postgresql
+-- =====================================================================
+-- FX ATLAS — ERD v3.0 DDL (PostgreSQL 15)
+-- 문자열 UTF-8 · 시각은 전부 UTC로 저장, 표시 시 Asia/Seoul 변환
+-- gen_random_uuid()는 PostgreSQL 13+ 코어 내장 함수를 사용한다
+-- =====================================================================
+
+-- ---------------------------------------------------------------------
+-- ENUM 타입
+-- ---------------------------------------------------------------------
+
+CREATE TYPE usd_pair_side AS ENUM ('self', 'base', 'quote', 'none');
+CREATE TYPE fx_channel AS ENUM ('tt', 'cash');
+CREATE TYPE rate_type AS ENUM ('mid', 'tt_buy', 'tt_sell', 'cash_buy', 'cash_sell');
+CREATE TYPE security_type AS ENUM ('stock', 'etf', 'adr', 'reit');
+CREATE TYPE price_source AS ENUM ('yahoo', 'alphavantage', 'manual');
+CREATE TYPE krw_asset_kind AS ENUM ('cash', 'deposit', 'domestic_equity', 'other');
+CREATE TYPE risk_grade AS ENUM ('stable', 'balanced', 'aggressive', 'challenging');
+CREATE TYPE explain_level AS ENUM ('simple', 'standard', 'detailed');
+CREATE TYPE explain_domain AS ENUM ('finance', 'dev', 'marketing', 'plain');
+CREATE TYPE diagnosis_status AS ENUM ('not_measured', 'simple_done', 'detail_done');
+CREATE TYPE goal_kind AS ENUM ('recurring', 'deadline');
+CREATE TYPE goal_purpose AS ENUM ('invest', 'once', 'travel', 'tuition');
+CREATE TYPE recur_interval AS ENUM ('weekly', 'monthly', 'quarterly');
+CREATE TYPE budget_period AS ENUM ('monthly', 'total');
+CREATE TYPE goal_status AS ENUM ('active', 'paused', 'completed', 'cancelled');
+CREATE TYPE plan_reason AS ENUM ('initial', 'skipped', 'safe_mode', 'user_edit', 'replan', 'rollover');
+CREATE TYPE step_status AS ENUM ('pending', 'done', 'partial', 'skipped', 'forced');
+CREATE TYPE entry_method AS ENUM ('manual', 'csv_import', 'open_banking');
+CREATE TYPE vol_regime AS ENUM ('calm', 'normal', 'elevated', 'stress');
+CREATE TYPE factor_category AS ENUM ('rate_diff', 'risk_sentiment', 'flow', 'policy', 'technical');
+CREATE TYPE notification_type AS ENUM ('step_due', 'regime_shift', 'deadline_near', 'target_zone', 'safe_mode', 'concentration');
+CREATE TYPE audit_action AS ENUM ('plan_created', 'plan_recalculated', 'ai_explained', 'warning_shown', 'forecast_served', 'data_stale');
+
+-- ---------------------------------------------------------------------
+-- A. 마스터 · 기준정보
+-- ---------------------------------------------------------------------
+
+CREATE TABLE currencies (
+  currency_code     CHAR(3) PRIMARY KEY,
+  name_ko           TEXT NOT NULL,
+  symbol            TEXT NOT NULL,
+  minor_units       SMALLINT NOT NULL,
+  quote_unit        SMALLINT NOT NULL DEFAULT 1,
+  usd_side          usd_pair_side NOT NULL,
+  is_home_currency  BOOLEAN NOT NULL DEFAULT FALSE,
+  is_supported      BOOLEAN NOT NULL DEFAULT FALSE,
+  support_note      TEXT,
+  color_token       TEXT,
+  sort_order        SMALLINT NOT NULL DEFAULT 99,
+  CONSTRAINT ck_minor CHECK (minor_units BETWEEN 0 AND 4),
+  CONSTRAINT ck_qunit CHECK (quote_unit IN (1, 100))
+);
+CREATE UNIQUE INDEX uq_home_currency ON currencies (is_home_currency) WHERE is_home_currency;
+
+CREATE TABLE currency_pairs (
+  pair_code             CHAR(6) PRIMARY KEY,
+  base_currency_code    CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  quote_currency_code   CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  is_stored             BOOLEAN NOT NULL,
+  derive_via_pair_code  CHAR(6) REFERENCES currency_pairs(pair_code),
+  CONSTRAINT ck_derive CHECK (
+    (is_stored AND derive_via_pair_code IS NULL) OR
+    (NOT is_stored AND derive_via_pair_code IS NOT NULL)
+  )
+);
+
+CREATE TABLE banks (
+  bank_code TEXT PRIMARY KEY,
+  name_ko   TEXT NOT NULL
+);
+
+CREATE TABLE bank_fx_terms (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  bank_code       TEXT NOT NULL REFERENCES banks(bank_code),
+  currency_code   CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  channel         fx_channel NOT NULL,
+  list_spread     NUMERIC(6,5) NOT NULL,
+  fixed_fee_krw   INTEGER NOT NULL DEFAULT 0,
+  min_amount      NUMERIC(18,4),
+  effective_from  DATE NOT NULL,
+  CONSTRAINT uq_bank_terms UNIQUE (bank_code, currency_code, channel, effective_from)
+);
+
+CREATE TABLE securities (
+  ticker        TEXT PRIMARY KEY,
+  name          TEXT,
+  currency_code CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  exchange      TEXT,
+  asset_type    security_type NOT NULL,
+  is_supported  BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE factors (
+  factor_code   TEXT PRIMARY KEY,
+  name_ko       TEXT NOT NULL,
+  category      factor_category NOT NULL,
+  source_series TEXT
+);
+
+CREATE TABLE stress_scenarios (
+  scenario_code     TEXT PRIMARY KEY,
+  name_ko           TEXT NOT NULL,
+  equity_shock_pct  NUMERIC(6,4) NOT NULL,
+  fx_shock_pct      NUMERIC(6,4) NOT NULL,
+  reference_event   TEXT,
+  assumption_note   TEXT,
+  is_default        BOOLEAN NOT NULL DEFAULT FALSE,
+  sort_order        SMALLINT NOT NULL DEFAULT 99
+);
+
+-- ---------------------------------------------------------------------
+-- B. 사용자
+-- ---------------------------------------------------------------------
+
+CREATE TABLE users (
+  id            UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  email         TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name          TEXT,
+  onboarded_at  TIMESTAMPTZ,
+  is_demo       BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at    TIMESTAMPTZ
+);
+
+CREATE TABLE user_settings (
+  user_id               UUID PRIMARY KEY REFERENCES users(id),
+  default_bank_code     TEXT REFERENCES banks(bank_code),
+  fx_discount_ratio     NUMERIC(5,4) NOT NULL DEFAULT 0,
+  explain_level         explain_level NOT NULL DEFAULT 'simple',
+  explain_domain        explain_domain NOT NULL DEFAULT 'plain',
+  notify_step_due       BOOLEAN NOT NULL DEFAULT TRUE,
+  notify_regime_shift   BOOLEAN NOT NULL DEFAULT TRUE,
+  notify_deadline_near  BOOLEAN NOT NULL DEFAULT TRUE,
+  notify_target_zone    BOOLEAN NOT NULL DEFAULT FALSE,
+  notify_concentration  BOOLEAN NOT NULL DEFAULT TRUE
+);
+
+CREATE TABLE user_banks (
+  user_id     UUID NOT NULL REFERENCES users(id),
+  bank_code   TEXT NOT NULL REFERENCES banks(bank_code),
+  is_primary  BOOLEAN NOT NULL DEFAULT FALSE,
+  memo        TEXT,
+  PRIMARY KEY (user_id, bank_code)
+);
+
+CREATE TABLE risk_profiles (
+  id                       UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                  UUID NOT NULL REFERENCES users(id),
+  grade                    risk_grade NOT NULL,
+  score                    SMALLINT NOT NULL,
+  concentration_threshold  NUMERIC(5,4) NOT NULL,
+  safe_ratio_adjust        NUMERIC(5,4) NOT NULL,
+  answers                  JSONB NOT NULL,
+  detail_answers           JSONB,
+  detail_progress          JSONB,
+  status                   diagnosis_status NOT NULL DEFAULT 'simple_done',
+  is_manual                BOOLEAN NOT NULL DEFAULT FALSE,
+  created_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at               TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT ck_score CHECK (score BETWEEN 0 AND 9)
+);
+CREATE INDEX idx_risk_latest ON risk_profiles (user_id, created_at DESC);
+
+-- ---------------------------------------------------------------------
+-- C. 자산
+-- ---------------------------------------------------------------------
+
+CREATE TABLE holdings (
+  id                    UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id               UUID NOT NULL REFERENCES users(id),
+  ticker                TEXT NOT NULL REFERENCES securities(ticker),
+  quantity              NUMERIC(18,4) NOT NULL,
+  avg_cost              NUMERIC(18,4) NOT NULL,
+  purchased_on          DATE NOT NULL,
+  purchase_fx_rate      NUMERIC(14,6),
+  fx_rate_entry_method  TEXT NOT NULL DEFAULT 'auto',
+  created_at            TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at            TIMESTAMPTZ
+);
+
+CREATE TABLE fx_deposits (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID NOT NULL REFERENCES users(id),
+  currency_code      CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  bank_code          TEXT REFERENCES banks(bank_code),
+  balance            NUMERIC(18,4) NOT NULL DEFAULT 0,
+  avg_acquired_rate  NUMERIC(14,6),
+  updated_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_deposit UNIQUE (user_id, currency_code, bank_code)
+);
+
+CREATE TABLE krw_assets (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id),
+  kind        krw_asset_kind NOT NULL,
+  label       TEXT,
+  amount_krw  NUMERIC(18,0) NOT NULL,
+  updated_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at  TIMESTAMPTZ
+);
+
+CREATE TABLE portfolio_snapshots (
+  user_id        UUID NOT NULL REFERENCES users(id),
+  snapshot_date  DATE NOT NULL,
+  total_krw      NUMERIC(18,0) NOT NULL,
+  fx_krw         NUMERIC(18,0) NOT NULL,
+  krw_only       NUMERIC(18,0) NOT NULL,
+  exposure       JSONB NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  PRIMARY KEY (user_id, snapshot_date)
+);
+
+-- ---------------------------------------------------------------------
+-- D. 목표 · 계획
+-- ---------------------------------------------------------------------
+
+CREATE TABLE goals (
+  id                     UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id                UUID NOT NULL REFERENCES users(id),
+  name                   TEXT NOT NULL,
+  kind                   goal_kind NOT NULL,
+  purpose                goal_purpose NOT NULL,
+  currency_code          CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  target_amount          NUMERIC(18,4) NOT NULL,
+  target_date            DATE NOT NULL,
+  recur_interval         recur_interval,
+  budget_amount          NUMERIC(18,0) NOT NULL,
+  budget_currency_code   CHAR(3) NOT NULL DEFAULT 'KRW' REFERENCES currencies(currency_code),
+  budget_period          budget_period NOT NULL,
+  is_speculative         BOOLEAN NOT NULL DEFAULT FALSE,
+  status                 goal_status NOT NULL DEFAULT 'active',
+  priority               SMALLINT NOT NULL DEFAULT 1,
+  created_at             TIMESTAMPTZ NOT NULL DEFAULT now(),
+  deleted_at             TIMESTAMPTZ
+);
+CREATE INDEX idx_goals_user_active ON goals (user_id, status) WHERE deleted_at IS NULL;
+
+CREATE TABLE plans (
+  id                        UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  goal_id                   UUID NOT NULL REFERENCES goals(id),
+  version                   INTEGER NOT NULL,
+  reason                    plan_reason NOT NULL,
+  reason_detail             TEXT,
+  risk_profile_id           UUID REFERENCES risk_profiles(id),
+  held_snapshot             NUMERIC(18,4) NOT NULL,
+  rate_snapshot             NUMERIC(14,6) NOT NULL,
+  sigma_snapshot            NUMERIC(8,5) NOT NULL,
+  spread_snapshot           NUMERIC(6,5) NOT NULL,
+  fixed_fee_snapshot        INTEGER NOT NULL,
+  weekly_budget_krw         NUMERIC(18,0) NOT NULL,
+  safe_ratio                NUMERIC(5,4),
+  split_count               SMALLINT,
+  weeks                     SMALLINT,
+  opportunity_amount        NUMERIC(18,4) NOT NULL DEFAULT 0,
+  opportunity_trigger_rate  NUMERIC(14,6),
+  achieve_prob              NUMERIC(5,4),
+  entry_sigma               NUMERIC(8,5),
+  worst5_rate               NUMERIC(14,6),
+  total_fee_krw             NUMERIC(18,0) NOT NULL DEFAULT 0,
+  is_active                 BOOLEAN NOT NULL DEFAULT TRUE,
+  created_at                TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_plans_version UNIQUE (goal_id, version),
+  CONSTRAINT ck_safe_ratio CHECK (safe_ratio IS NULL OR safe_ratio BETWEEN 0 AND 1)
+);
+CREATE UNIQUE INDEX uq_plans_active ON plans (goal_id) WHERE is_active;
+
+CREATE TABLE plan_steps (
+  id                  UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  plan_id             UUID NOT NULL REFERENCES plans(id),
+  seq                 SMALLINT NOT NULL,
+  scheduled_date      DATE NOT NULL,
+  amount              NUMERIC(18,4) NOT NULL,
+  executed_amount     NUMERIC(18,4) NOT NULL DEFAULT 0,
+  is_final_safe_date  BOOLEAN NOT NULL DEFAULT FALSE,
+  status              step_status NOT NULL DEFAULT 'pending',
+  CONSTRAINT uq_steps_seq UNIQUE (plan_id, seq),
+  CONSTRAINT ck_exec_amt CHECK (executed_amount <= amount)
+);
+CREATE INDEX idx_steps_due ON plan_steps (scheduled_date, status) WHERE status = 'pending';
+
+CREATE TABLE executions (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  goal_id        UUID NOT NULL REFERENCES goals(id),
+  step_id        UUID REFERENCES plan_steps(id),
+  currency_code  CHAR(3) NOT NULL REFERENCES currencies(currency_code),
+  bank_code      TEXT REFERENCES banks(bank_code),
+  channel        fx_channel NOT NULL DEFAULT 'tt',
+  executed_at    TIMESTAMPTZ NOT NULL,
+  amount         NUMERIC(18,4) NOT NULL,
+  applied_rate   NUMERIC(14,6) NOT NULL,
+  fee_krw        NUMERIC(18,0) NOT NULL DEFAULT 0,
+  krw_paid       NUMERIC(18,0) NOT NULL,
+  entry_method   entry_method NOT NULL DEFAULT 'manual',
+  note           TEXT
+);
+CREATE INDEX idx_exec_goal ON executions (goal_id, executed_at DESC);
+
+-- ---------------------------------------------------------------------
+-- E. 시장 데이터
+-- ---------------------------------------------------------------------
+
+CREATE TABLE fx_rates (
+  pair_code    CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  quote_date   DATE NOT NULL,
+  rate_type    rate_type NOT NULL,
+  rate         NUMERIC(14,6) NOT NULL,
+  data_source  TEXT NOT NULL,
+  fetched_at   TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (pair_code, quote_date, rate_type)
+);
+
+CREATE TABLE fx_stats (
+  pair_code          CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  quote_date         DATE NOT NULL,
+  vol_7d             NUMERIC(8,5),
+  vol_30d            NUMERIC(8,5) NOT NULL,
+  vol_90d            NUMERIC(8,5),
+  vol_percentile_5y  NUMERIC(5,4) NOT NULL,
+  regime             vol_regime NOT NULL,
+  PRIMARY KEY (pair_code, quote_date)
+);
+
+CREATE TABLE fx_correlations (
+  pair_code_a  CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  pair_code_b  CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  window_days  SMALLINT NOT NULL,
+  as_of        DATE NOT NULL,
+  rho          NUMERIC(6,5) NOT NULL,
+  PRIMARY KEY (pair_code_a, pair_code_b, window_days, as_of),
+  CONSTRAINT ck_corr_order CHECK (pair_code_a < pair_code_b),
+  CONSTRAINT ck_corr_range CHECK (rho BETWEEN -1 AND 1)
+);
+
+CREATE TABLE security_prices (
+  ticker       TEXT NOT NULL REFERENCES securities(ticker),
+  price_date   DATE NOT NULL,
+  close_price  NUMERIC(18,4) NOT NULL,
+  data_source  price_source NOT NULL,
+  fetched_at   TIMESTAMPTZ NOT NULL,
+  PRIMARY KEY (ticker, price_date)
+);
+CREATE INDEX idx_price_latest ON security_prices (ticker, price_date DESC);
+
+CREATE TABLE forecasts (
+  id             UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pair_code      CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  horizon_days   SMALLINT NOT NULL,
+  base_date      DATE NOT NULL,
+  base_rate      NUMERIC(14,6) NOT NULL,
+  model_path     JSONB,
+  p50_lo         NUMERIC(14,6) NOT NULL,
+  p50_hi         NUMERIC(14,6) NOT NULL,
+  p80_lo         NUMERIC(14,6) NOT NULL,
+  p80_hi         NUMERIC(14,6) NOT NULL,
+  model_version  TEXT NOT NULL,
+  created_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_forecast UNIQUE (pair_code, base_date, horizon_days)
+);
+
+CREATE TABLE forecast_factors (
+  forecast_id   UUID NOT NULL REFERENCES forecasts(id),
+  factor_code   TEXT NOT NULL REFERENCES factors(factor_code),
+  direction     SMALLINT NOT NULL,
+  strength      NUMERIC(4,3) NOT NULL,
+  latest_value  NUMERIC(18,6),
+  PRIMARY KEY (forecast_id, factor_code)
+);
+
+CREATE TABLE model_runs (
+  id              UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  pair_code       CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  horizon_days    SMALLINT NOT NULL,
+  hit_rate        NUMERIC(5,4),
+  mae             NUMERIC(8,5),
+  coverage_80     NUMERIC(5,4) NOT NULL,
+  avg_width       NUMERIC(8,5) NOT NULL,
+  rw_improvement  NUMERIC(6,4) NOT NULL,
+  evaluated_at    TIMESTAMPTZ NOT NULL
+);
+
+CREATE TABLE econ_events (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_date  DATE NOT NULL,
+  region      TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  impact      SMALLINT NOT NULL
+);
+CREATE INDEX idx_events_date ON econ_events (event_date);
+
+CREATE TABLE econ_event_pairs (
+  event_id   UUID NOT NULL REFERENCES econ_events(id),
+  pair_code  CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  PRIMARY KEY (event_id, pair_code)
+);
+
+CREATE TABLE macro_series (
+  series_code  TEXT NOT NULL,
+  obs_date     DATE NOT NULL,
+  value        NUMERIC(18,6) NOT NULL,
+  data_source  TEXT NOT NULL,
+  PRIMARY KEY (series_code, obs_date)
+);
+
+-- ---------------------------------------------------------------------
+-- F. Stress Test
+-- ---------------------------------------------------------------------
+
+CREATE TABLE stress_test_runs (
+  id                 UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id            UUID NOT NULL REFERENCES users(id),
+  scenario_code      TEXT NOT NULL REFERENCES stress_scenarios(scenario_code),
+  base_date          DATE NOT NULL,
+  equity_shock_pct   NUMERIC(6,4) NOT NULL,
+  fx_shock_pct       NUMERIC(6,4) NOT NULL,
+  equity_effect_krw  NUMERIC(18,0) NOT NULL,
+  fx_effect_krw      NUMERIC(18,0) NOT NULL,
+  total_effect_krw   NUMERIC(18,0) NOT NULL,
+  snapshot_date      DATE,
+  created_at         TIMESTAMPTZ NOT NULL DEFAULT now(),
+  FOREIGN KEY (user_id, snapshot_date) REFERENCES portfolio_snapshots(user_id, snapshot_date)
+);
+CREATE INDEX idx_stress_user ON stress_test_runs (user_id, created_at DESC);
+
+-- ---------------------------------------------------------------------
+-- G. 지원 테이블
+-- ---------------------------------------------------------------------
+
+CREATE TABLE notifications (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID NOT NULL REFERENCES users(id),
+  goal_id     UUID REFERENCES goals(id),
+  type        notification_type NOT NULL,
+  dedup_key   TEXT NOT NULL,
+  title       TEXT NOT NULL,
+  body        TEXT NOT NULL,
+  sent_at     TIMESTAMPTZ,
+  read_at     TIMESTAMPTZ,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_notif_dedup UNIQUE (user_id, dedup_key)
+);
+CREATE INDEX idx_notif_unread ON notifications (user_id, read_at);
+
+CREATE TABLE audit_logs (
+  id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  user_id     UUID REFERENCES users(id),
+  action      audit_action NOT NULL,
+  entity      TEXT,
+  entity_id   UUID,
+  payload     JSONB NOT NULL,
+  created_at  TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+CREATE INDEX idx_audit_user ON audit_logs (user_id, created_at);
+CREATE INDEX idx_audit_action ON audit_logs (action, created_at);
+
+```
+
 ## 1. 제품이 푸는 문제
 
 6개월 뒤 유로 3,000이 필요하지만 환율은 매일 변한다. **방향 예측은 포기하고(Meese–Rogoff, 1983) 분산을 줄인다.**
