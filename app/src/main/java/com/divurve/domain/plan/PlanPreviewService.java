@@ -3,6 +3,7 @@ package com.divurve.domain.plan;
 import com.divurve.common.architecture.UseCase;
 import com.divurve.common.exception.ForbiddenException;
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.goal.GoalRepository;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.engine.bucket.BucketAllocator;
@@ -40,19 +41,24 @@ import java.util.UUID;
 @UseCase
 public class PlanPreviewService {
 
+    /** 원화 통화코드. 목표 통화가 이미 원화면 환율 조회 없이 그대로 비교한다. */
+    private static final String KRW_CURRENCY_CODE = "KRW";
+
     private final GoalRepository goalRepository;
     private final BucketAllocator bucketAllocator;
     private final SplitVarianceReducer splitVarianceReducer;
     private final CostCalculator costCalculator;
     private final MonteCarloSimulator monteCarloSimulator;
     private final ConcentrationCalculator concentrationCalculator;
+    private final PerUnitFxRates perUnitFxRates;
 
     public PlanPreviewService(GoalRepository goalRepository,
             BucketAllocator bucketAllocator,
             SplitVarianceReducer splitVarianceReducer,
             CostCalculator costCalculator,
             MonteCarloSimulator monteCarloSimulator,
-            ConcentrationCalculator concentrationCalculator) {
+            ConcentrationCalculator concentrationCalculator,
+            PerUnitFxRates perUnitFxRates) {
         this.goalRepository = Objects.requireNonNull(goalRepository, "GoalRepository는 null일 수 없습니다");
         this.bucketAllocator = Objects.requireNonNull(bucketAllocator, "BucketAllocator는 null일 수 없습니다");
         this.splitVarianceReducer = Objects.requireNonNull(splitVarianceReducer,
@@ -62,6 +68,7 @@ public class PlanPreviewService {
                 "MonteCarloSimulator는 null일 수 없습니다");
         this.concentrationCalculator = Objects.requireNonNull(concentrationCalculator,
                 "ConcentrationCalculator는 null일 수 없습니다");
+        this.perUnitFxRates = Objects.requireNonNull(perUnitFxRates, "PerUnitFxRates는 null일 수 없습니다");
     }
 
     /**
@@ -160,13 +167,18 @@ public class PlanPreviewService {
         // 확정 전 수치를 고정해 버리는 셈이라 손대지 않고, route.enabled 로 호출 자체를 막았다.
         // 정의가 확정되면 seed 를 (goalId, 계획 버전) 같은 결정적 값으로 바꾸고 커밋 타입 calc 로
         // 변경 전/후 수치를 남긴다.
+        //
+        // 목표금액(외화)과 월예산(원화)은 단위가 달라 직접 비교할 수 없다(이슈 #82) — 이 메서드의
+        // 나머지 값(safe_amount_krw·opportunity_amount_krw·회차 금액·비용)이 전부 원화이므로
+        // 목표금액을 원화로 환산해 맞춘다.
+        double targetAmountKrw = convertTargetAmountToKrw(goal);
         double achieveProb = monteCarloSimulator.achievementProbability(
                 0.08,   // 기대 수익률 8%
                 0.15,   // 변동성 15%
                 0.0,    // 초기 보유액
                 monthlyBudgetKrw,
                 calculateMonths(goal.getTargetDate()),
-                goal.getTargetAmount(),
+                targetAmountKrw,
                 System.currentTimeMillis()
         );
 
@@ -205,6 +217,23 @@ public class PlanPreviewService {
                 ),
                 new ArrayList<>()
         );
+    }
+
+    /**
+     * 목표금액을 원화로 환산한다. 목표 통화가 이미 KRW 면 환율 조회 없이 그대로 돌려준다 —
+     * {@link PerUnitFxRates} 는 {@code <통화>_KRW} 통화쌍만 조회하므로 KRW_KRW 를 물으면 실패한다.
+     *
+     * <p>환율 조회는 {@link PerUnitFxRates#require} 를 쓴다 — 여기서 실패하면 달성 확률이라는
+     * 결과값 전체가 성립하지 않으므로(자산 목록에서 통화 하나만 빼는 {@code find} 자리와 다르다),
+     * 예외를 그대로 올려 잘못된 확률을 계산해 내려주지 않는다.
+     */
+    private double convertTargetAmountToKrw(Goal goal) {
+        String currencyCode = goal.getCurrencyCode();
+        if (KRW_CURRENCY_CODE.equalsIgnoreCase(currencyCode)) {
+            return goal.getTargetAmount();
+        }
+
+        return goal.getTargetAmount() * perUnitFxRates.require(currencyCode).doubleValue();
     }
 
     private int calculateIntervalDays(String recurInterval, int splitCount) {
