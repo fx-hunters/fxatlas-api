@@ -22,7 +22,7 @@ class UserSettingsRepositoryTest extends RepositoryTestBase {
 
     @Test
     void 설정을_저장하고_소유자로_조회한다() {
-        User owner = userRepository.save(User.create("us-a@divurve.com", "앨리스", false));
+        User owner = userRepository.save(User.createDemo("us-a@divurve.com", "앨리스"));
         userSettingsRepository.save(UserSettings.create(owner, "081", 0.5, "standard", "dev"));
 
         assertThat(userSettingsRepository.findByOwner_Id(owner.getId()))
@@ -37,7 +37,7 @@ class UserSettingsRepositoryTest extends RepositoryTestBase {
 
     @Test
     void 주거래_은행을_비워도_저장하고_조회할_수_있다() {
-        User owner = userRepository.save(User.create("us-b@divurve.com", "밥", false));
+        User owner = userRepository.save(User.createDemo("us-b@divurve.com", "밥"));
         userSettingsRepository.save(UserSettings.create(owner, null, 0.0, "standard", "plain"));
 
         assertThat(userSettingsRepository.findByOwner_Id(owner.getId()))

@@ -34,7 +34,7 @@ class UserSettingsServiceTest {
     private UserRepository userRepository;
 
     private final UUID userId = UUID.randomUUID();
-    private final User user = User.create("me@divurve.com", "나", false);
+    private final User user = User.createDemo("me@divurve.com", "나");
 
     private UserSettingsService service() {
         return new UserSettingsService(userSettingsRepository, userRepository, new EffectiveSpreadCalculator());
