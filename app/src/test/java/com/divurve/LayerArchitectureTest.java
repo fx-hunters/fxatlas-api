@@ -81,6 +81,19 @@ class LayerArchitectureTest {
         .and().haveSimpleNameEndingWith("Service")
         .should().beAnnotatedWith(UseCase.class);
 
+    /**
+     * 컨트롤러가 인증 컨텍스트를 직접 읽지 못하게 막는다 (이슈 #50).
+     *
+     * <p>이전에는 {@code private UUID currentUserId()} 헬퍼가 컨트롤러 5곳에 똑같이 복붙돼 있었고,
+     * 관례를 모르는 작성자는 {@code @RequestParam UUID userId} 로 빠졌다(Xray·Fit). 인증 강제 지점이
+     * {@code CurrentUserArgumentResolver} 하나가 되도록, 컨트롤러는 {@code @CurrentUser} 파라미터만 쓴다.
+     */
+    @ArchTest
+    static final ArchRule 컨트롤러는_인증_컨텍스트를_직접_읽지_않는다 = noClasses()
+        .that().resideInAPackage("..api.controller..")
+        .should().dependOnClassesThat()
+        .haveFullyQualifiedName("com.divurve.api.config.auth.CurrentUserContext");
+
     @ArchTest
     static final ArchRule 포트_구현체는_ExternalAdapter_를_붙인다 = classes()
         .that().resideInAPackage("..infra..")

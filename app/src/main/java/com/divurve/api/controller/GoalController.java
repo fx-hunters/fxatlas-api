@@ -1,5 +1,6 @@
 package com.divurve.api.controller;
 
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.goal.GoalCreateRequest;
 import com.divurve.api.dto.goal.GoalListResponse;
 import com.divurve.api.dto.goal.GoalResponse;
@@ -24,6 +25,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * 목표 엔드포인트 (명세 2·3.2장).
  * 소유자 기준 필터를 적용한다 (NFR-SE-03). held_amount는 요청시 자동 조회된다 (FR-RT-05).
+ *
+ * <p>소유자는 {@link CurrentUser} 로 주입받는다. 이슈 #50 이전에는 하드코딩된 UUID 상수를
+ * 5개 메서드가 공유해, <b>모든 사용자가 같은 목표 목록을 보고 서로의 목표를 수정·삭제할 수 있었다</b>.
  */
 @WebAdapter
 @RestController
@@ -32,7 +36,6 @@ import org.springframework.web.bind.annotation.RestController;
 public class GoalController {
 
     private final GoalService goalService;
-    private static final UUID CURRENT_USER_ID = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
 
     public GoalController(GoalService goalService) {
         this.goalService = goalService;
@@ -40,19 +43,21 @@ public class GoalController {
 
     @Operation(summary = "목표 목록")
     @GetMapping
-    public ApiResponse<GoalListResponse> listGoals() {
-        List<Goal> goals = goalService.listByOwner(CURRENT_USER_ID);
+    public ApiResponse<GoalListResponse> listGoals(@CurrentUser UUID userId) {
+        List<Goal> goals = goalService.listByOwner(userId);
         List<GoalResponse> responses = goals.stream()
-                .map(this::toGoalResponse)
+                .map(goal -> toGoalResponse(userId, goal))
                 .toList();
         return ApiResponse.of(new GoalListResponse(responses));
     }
 
     @Operation(summary = "목표 생성")
     @PostMapping
-    public ApiResponse<GoalResponse> createGoal(@RequestBody GoalCreateRequest request) {
+    public ApiResponse<GoalResponse> createGoal(
+            @CurrentUser UUID userId,
+            @RequestBody GoalCreateRequest request) {
         Goal goal = goalService.create(
-                CURRENT_USER_ID,
+                userId,
                 request.name(),
                 request.kind(),
                 request.purpose(),
@@ -64,25 +69,28 @@ public class GoalController {
                 request.budgetCurrencyCode(),
                 request.budgetPeriod(),
                 request.isSpeculative());
-        return ApiResponse.of(toGoalResponse(goal));
+        return ApiResponse.of(toGoalResponse(userId, goal));
     }
 
     @Operation(summary = "목표 상세")
     @GetMapping("/{id}")
-    public ApiResponse<GoalResponse> getGoal(@PathVariable String id) {
+    public ApiResponse<GoalResponse> getGoal(
+            @CurrentUser UUID userId,
+            @PathVariable String id) {
         UUID goalId = UUID.fromString(id);
-        Goal goal = goalService.getByIdAndOwner(CURRENT_USER_ID, goalId);
-        return ApiResponse.of(toGoalResponse(goal));
+        Goal goal = goalService.getByIdAndOwner(userId, goalId);
+        return ApiResponse.of(toGoalResponse(userId, goal));
     }
 
     @Operation(summary = "목표 수정")
     @PutMapping("/{id}")
     public ApiResponse<GoalResponse> updateGoal(
+            @CurrentUser UUID userId,
             @PathVariable String id,
             @RequestBody GoalUpdateRequest request) {
         UUID goalId = UUID.fromString(id);
         Goal goal = goalService.update(
-                CURRENT_USER_ID,
+                userId,
                 goalId,
                 request.name(),
                 request.targetAmount(),
@@ -90,19 +98,21 @@ public class GoalController {
                 request.budgetAmount(),
                 request.budgetPeriod(),
                 request.isSpeculative());
-        return ApiResponse.of(toGoalResponse(goal));
+        return ApiResponse.of(toGoalResponse(userId, goal));
     }
 
     @Operation(summary = "목표 삭제")
     @DeleteMapping("/{id}")
-    public ApiResponse<Void> deleteGoal(@PathVariable String id) {
+    public ApiResponse<Void> deleteGoal(
+            @CurrentUser UUID userId,
+            @PathVariable String id) {
         UUID goalId = UUID.fromString(id);
-        goalService.delete(CURRENT_USER_ID, goalId);
+        goalService.delete(userId, goalId);
         return ApiResponse.of(null);
     }
 
-    private GoalResponse toGoalResponse(Goal goal) {
-        double heldAmount = goalService.getHeldAmountByCurrency(CURRENT_USER_ID, goal.getCurrencyCode());
+    private GoalResponse toGoalResponse(UUID userId, Goal goal) {
+        double heldAmount = goalService.getHeldAmountByCurrency(userId, goal.getCurrencyCode());
         GoalResponse.Suggested suggested = new GoalResponse.Suggested(0.0, 0.0, 0);
         return new GoalResponse(
                 goal.getId().toString(),

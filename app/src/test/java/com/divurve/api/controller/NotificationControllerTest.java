@@ -1,19 +1,19 @@
 package com.divurve.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.divurve.api.config.auth.CurrentUserContext;
 import com.divurve.api.dto.notifications.NotificationsResponse;
-import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.common.response.ApiResponse;
-import com.divurve.domain.port.AuthPrincipal;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 
 /**
  * {@link NotificationController} 매핑 검증.
+ *
+ * <p>"인증 컨텍스트가 없으면 401" 은 이제 컨트롤러가 아니라
+ * {@code CurrentUserArgumentResolver} 의 책임이다 (이슈 #50) — 해당 검증은
+ * {@code CurrentUserArgumentResolverTest} 에 한 벌로 모여 있다.
+ * 컨트롤러가 {@code @CurrentUser} 파라미터를 받는 이상, 미인증 요청은 여기까지 도달하지 못한다.
  */
 class NotificationControllerTest {
 
@@ -23,44 +23,18 @@ class NotificationControllerTest {
         return new NotificationController();
     }
 
-    private void authenticate() {
-        CurrentUserContext.set(new AuthPrincipal(userId, false));
-    }
-
-    @AfterEach
-    void tearDown() {
-        CurrentUserContext.clear();
-    }
-
     @Test
     void getNotifications_은_알림목록을_래핑한다() {
-        authenticate();
-
-        ApiResponse<NotificationsResponse> response = controller().getNotifications();
+        ApiResponse<NotificationsResponse> response = controller().getNotifications(userId);
 
         assertThat(response.data().notifications()).isEmpty();
     }
 
     @Test
-    void 인증_컨텍스트가_없으면_401() {
-        assertThatThrownBy(() -> controller().getNotifications())
-                .isInstanceOf(UnauthorizedException.class);
-    }
-
-    @Test
     void getNotifications_은_응답을_ApiResponse로_래핑한다() {
-        authenticate();
-
-        ApiResponse<NotificationsResponse> response = controller().getNotifications();
+        ApiResponse<NotificationsResponse> response = controller().getNotifications(userId);
 
         assertThat(response.data()).isNotNull();
         assertThat(response.meta()).isNotNull();
-    }
-
-    @Test
-    void getNotifications_은_현재_사용자를_확인한다() {
-        // 인증 없이 호출하면 예외 발생
-        assertThatThrownBy(() -> controller().getNotifications())
-                .isInstanceOf(UnauthorizedException.class);
     }
 }
