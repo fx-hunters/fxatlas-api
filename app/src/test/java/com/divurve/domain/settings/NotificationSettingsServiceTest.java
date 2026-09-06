@@ -104,6 +104,23 @@ class NotificationSettingsServiceTest {
     }
 
     @Test
+    void testUpdateNotifications_ExistingSettingsPreserveReviewAndBucketWhenNull() {
+        User user = User.create("test@example.com", "테스트사용자", false);
+        UserSettings settings = UserSettings.create(user, null, 0.0, "simple", "plain");
+        settings.updateNotifications(false, false, false, true);
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.of(settings));
+        when(userSettingsRepository.save(settings)).thenReturn(settings);
+
+        // 재검토필요·구간진입만 null → 기본값 true 가 아니라 기존 저장값(false·true)이 유지돼야 한다
+        NotificationSettingsView updated = service.updateNotifications(userId, true, null, true, null);
+
+        assertThat(updated.exchangeScheduleReminder()).isTrue();
+        assertThat(updated.reviewRequiredAlert()).isFalse();
+        assertThat(updated.deadlineApproachAlert()).isTrue();
+        assertThat(updated.bucketEntryAlert()).isTrue();
+    }
+
+    @Test
     void testUpdateNotifications_UserNotFound() {
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
