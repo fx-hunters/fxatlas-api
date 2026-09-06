@@ -83,6 +83,50 @@ class ForecastControllerTest {
     }
 
     @Test
+    void testGetForecast_MapsLastPathPointIntoInterval80() {
+        when(mockService.getForecast("USD_KRW", 30)).thenReturn(mockForecastData);
+
+        var response = controller.getForecast("USD_KRW", 30);
+
+        // 마지막 경로 포인트(t=30)의 80% 구간이 그대로 interval_80 이 된다.
+        var interval = response.data().interval80();
+        assertEquals(1150.0 + 30 * 0.5, interval.lo(), 1e-9);
+        assertEquals(1250.0 + 30 * 0.5, interval.hi(), 1e-9);
+        assertEquals((interval.hi() - interval.lo()) / 1200.0, interval.widthPct(), 1e-9);
+
+        assertThat(response.data().history()).hasSize(100);
+        assertThat(response.data().path()).hasSize(31);
+        assertThat(response.data().modelPath()).isEmpty();
+        assertThat(response.data().volatility().regime()).isEqualTo("Normal");
+        assertThat(response.data().volatility().percentile5y()).isEqualTo(50);
+        assertEquals(1200.0, response.data().baseRate(), 1e-9);
+    }
+
+    @Test
+    void testGetForecast_EmptyPathPointsFallsBackToCurrentRate() {
+        ForecastService.ForecastData empty = new ForecastService.ForecastData(
+            "USD_KRW",
+            30,
+            1200.0,
+            createBaseline(),
+            createHistory(),
+            List.of(),
+            0.15,
+            50,
+            "Normal"
+        );
+        when(mockService.getForecast("USD_KRW", 30)).thenReturn(empty);
+
+        var response = controller.getForecast("USD_KRW", 30);
+
+        // 경로가 비어 있으면 상·하단 모두 현재 환율로 떨어지고 폭은 0 이다.
+        assertThat(response.data().path()).isEmpty();
+        assertEquals(1200.0, response.data().interval80().lo(), 1e-9);
+        assertEquals(1200.0, response.data().interval80().hi(), 1e-9);
+        assertEquals(0.0, response.data().interval80().widthPct(), 1e-9);
+    }
+
+    @Test
     void testGetFactors_Success() {
         when(mockService.getFactors("USD_KRW")).thenReturn(mockFactors);
 

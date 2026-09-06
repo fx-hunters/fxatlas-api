@@ -84,6 +84,49 @@ class ForecastServiceTest {
     }
 
     @Test
+    void testGetForecast_NullHistory_YieldsNoDailyReturns() {
+        String pairCode = "USD_KRW";
+        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(snapshot(pairCode, "1200.00"));
+        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), anyInt()))
+            .thenReturn(null);
+
+        // 수익률이 하나도 없으면 30일 실현변동성을 계산할 수 없다.
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class, () -> service.getForecast(pairCode, 30));
+        assertTrue(ex.getMessage().contains("got 0"), ex.getMessage());
+    }
+
+    @Test
+    void testGetForecast_SingleHistoryPoint_YieldsNoDailyReturns() {
+        String pairCode = "USD_KRW";
+        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(snapshot(pairCode, "1200.00"));
+        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), anyInt()))
+            .thenReturn(createHistoryData(1));
+
+        // 관측치가 1개면 (n-1)=0개의 수익률만 나오므로 동일하게 계산 불가.
+        IllegalArgumentException ex = assertThrows(
+            IllegalArgumentException.class, () -> service.getForecast(pairCode, 30));
+        assertTrue(ex.getMessage().contains("got 0"), ex.getMessage());
+    }
+
+    @Test
+    void testGetForecast_IsDeterministic_ForFixedSeed() {
+        String pairCode = "USD_KRW";
+        when(fxRateProvider.fetchLatest(pairCode)).thenReturn(snapshot(pairCode, "1200.00"));
+        when(historyProvider.fetchHistorical(eq(pairCode), any(LocalDate.class), eq(5 * 252 + 30)))
+            .thenReturn(createHistoryData(6 * 252 + 30));
+
+        ForecastService.ForecastData first = service.getForecast(pairCode, 90);
+        ForecastService.ForecastData second = service.getForecast(pairCode, 90);
+
+        // 시드가 고정되어 있으므로 같은 입력이면 같은 팬차트가 나와야 한다.
+        assertEquals(first.pathPoints(), second.pathPoints());
+        assertEquals(91, first.pathPoints().size()); // horizon + 1 시점
+        assertEquals(91, first.baseline().size());
+        assertEquals(1200.0, first.baseline().get(0), 1e-9);
+    }
+
+    @Test
     void testGetForecast_InvalidHorizon() {
         assertThrows(IllegalArgumentException.class, () -> service.getForecast("USD_KRW", 50));
         assertThrows(IllegalArgumentException.class, () -> service.getForecast("USD_KRW", 15));
@@ -174,6 +217,10 @@ class ForecastServiceTest {
 
         assertThrows(IllegalArgumentException.class,
             () -> service.extendRatesByTriangulation(baseRates));
+    }
+
+    private RateSnapshot snapshot(String pairCode, String rate) {
+        return new RateSnapshot(pairCode, new BigDecimal(rate), LocalDate.now(), "ECOS", Instant.now());
     }
 
     private List<FxRateHistoryProvider.HistoryRateSnapshot> createHistoryData(int count) {
