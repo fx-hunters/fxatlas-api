@@ -14,6 +14,7 @@ import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.route.RouteFeatureFlag;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import org.springframework.web.bind.annotation.DeleteMapping;
@@ -78,7 +79,7 @@ public class GoalController {
     @PostMapping
     public ApiResponse<GoalResponse> createGoal(
             @CurrentUser UUID userId,
-            @RequestBody GoalCreateRequest request) {
+            @Valid @RequestBody GoalCreateRequest request) {
         routeFeatureFlag.requireEnabled();
         Goal goal = goalService.create(
                 userId,
@@ -116,7 +117,7 @@ public class GoalController {
     public ApiResponse<GoalResponse> updateGoal(
             @CurrentUser UUID userId,
             @PathVariable String id,
-            @RequestBody GoalUpdateRequest request) {
+            @Valid @RequestBody GoalUpdateRequest request) {
         routeFeatureFlag.requireEnabled();
         UUID goalId = UUID.fromString(id);
         Goal goal = goalService.update(
