@@ -159,18 +159,11 @@ public class XrayService {
         );
     }
 
+    // 호출부(getAttribution)가 이미 빈 목록에 NotFoundException 을 던지므로 여기서는 비어있지 않음이 보장된다.
     private AttributionAnalysis buildAttributionAnalysis(List<Holding> holdings, String mode) {
         // 현재가/매입가 정보로 귀속분해 계산
         // 예시: 첫 번째 종목 기준으로 계산
-        if (holdings.isEmpty()) {
-            return null;
-        }
-
         Holding holding = holdings.get(0);
-        long costBasis = Math.round(holding.getQuantity() * holding.getAvgPrice() * holding.getPurchaseFxRateKrw().doubleValue());
-
-        // 임시 구현: 실제로는 현재가 조회 필요
-        long current = costBasis; // 임시
 
         AttributionCalculator.AttributionResult result = attributionCalculator.decompose(
                 holding.getQuantity() * holding.getAvgPrice(),
