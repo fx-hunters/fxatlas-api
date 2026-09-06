@@ -10,6 +10,8 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.client.RestClient;
 
@@ -22,6 +24,8 @@ import org.springframework.web.client.RestClient;
  */
 @ExternalAdapter
 class EcosFxRateProvider implements FxRateProvider {
+
+    private static final Logger log = LoggerFactory.getLogger(EcosFxRateProvider.class);
 
     private static final String SOURCE = "ECOS";
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
@@ -63,7 +67,7 @@ class EcosFxRateProvider implements FxRateProvider {
         );
 
         EcosResponse body = restClient.get().uri(path).retrieve().body(EcosResponse.class);
-        EcosRow latest = pickLatest(body);
+        EcosRow latest = pickLatest(body, pairCode);
         return new RateSnapshot(
             pairCode,
             new BigDecimal(latest.dataValue()),
@@ -73,7 +77,19 @@ class EcosFxRateProvider implements FxRateProvider {
         );
     }
 
-    private EcosRow pickLatest(EcosResponse body) {
+    /**
+     * 최근 종가 행을 고른다. ECOS 는 실패도 HTTP 200 으로 돌려주므로 {@code RESULT} 블록을 먼저 본다
+     * (이슈 #57) — 그러지 않으면 인증키 오류가 "행이 없다"로 뭉개진다.
+     */
+    private EcosRow pickLatest(EcosResponse body, String pairCode) {
+        EcosResult result = body == null ? null : body.result();
+        if (result != null && !result.isBenign()) {
+            // MESSAGE 는 로그에만 남긴다 — 응답으로 외부 시스템 문구를 그대로 내보내지 않는다.
+            log.warn("ECOS 오류 응답 code={} message={} pair={}",
+                result.code(), result.message(), pairCode);
+            throw new IllegalStateException(
+                "ECOS request failed with result code " + result.code());
+        }
         List<EcosRow> rows = Optional.ofNullable(body)
             .map(EcosResponse::statisticSearch)
             .map(StatisticSearch::row)
@@ -88,7 +104,10 @@ class EcosFxRateProvider implements FxRateProvider {
 
     // ── 응답 매핑 (ECOS 원본 필드명이 UpperSnake 라서 @JsonProperty 대신 record + Jackson 매핑용 별도 컨버터 없이
     // 필드명을 소문자로 두고 Jackson 이 case-insensitive 하게 매핑하도록 아래 구조를 사용한다) ───────
-    record EcosResponse(@com.fasterxml.jackson.annotation.JsonProperty("StatisticSearch") StatisticSearch statisticSearch) {
+    record EcosResponse(
+        @com.fasterxml.jackson.annotation.JsonProperty("StatisticSearch") StatisticSearch statisticSearch,
+        @com.fasterxml.jackson.annotation.JsonProperty("RESULT") EcosResult result
+    ) {
     }
 
     record StatisticSearch(@com.fasterxml.jackson.annotation.JsonProperty("row") List<EcosRow> row) {

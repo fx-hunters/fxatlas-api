@@ -38,5 +38,9 @@ build/
 
 # OS
 .DS_Store
+
+# 로컬 개발 설정 — DB 접속 정보와 외부 API 키(ECOS/FRED)가 평문으로 들어간다.
+# 커밋하지 않는다. 형식은 application-dev.yml.example 참고.
 app/src/main/resources/application-dev.yml
+
 .claude/agents
