@@ -182,7 +182,7 @@ class AiServiceTest {
         Map<String, Object> stressed = Map.of("amount", 100000.0, "regime", "elevated");
         List<String> disclosed = List.of(
                 "자산은 100000입니다.",
-                "최근 변동성이 커진 구간이라 안내한 수치의 오차가 평소보다 커질 수 있습니다.");
+                "최근 변동성이 커진 구간이라 " + RegimeDisclosureCheck.REQUIRED_DISCLOSURE + ".");
         when(aiProvider.explain(any(ExplainContext.class))).thenReturn(new ExplainResult(disclosed));
         when(validator.verify(disclosed, stressed)).thenReturn(true);
         when(narrativeFilter.detect(String.join(" ", disclosed))).thenReturn(List.of());

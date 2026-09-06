@@ -1,5 +1,6 @@
 package com.divurve.infra.ai;
 
+import com.divurve.domain.ai.RegimeDisclosureCheck;
 import com.divurve.domain.port.AiProvider.ExplainContext;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -39,14 +40,14 @@ final class ClaudeExplainPrompt {
         4. 투자 권유 금지 — 매수·매도·지금이 기회 같은 표현을 쓰지 않는다. 수익·원금 보장,
            "반드시·확실히·무조건" 같은 단정 표현도 쓰지 않는다.
         5. 문장 수 고정 — 정확히 %d개의 문장을 만든다. 더도 덜도 안 된다.
-        6. 급변 구간 — facts 의 regime 이 elevated 또는 stress 이면, 네 문장 중 하나에 반드시
-           "변동성이 커진 구간이라 안내한 수치와 구간의 오차가 평소보다 커질 수 있다"는 취지를 담는다.
+        6. 급변 구간 — facts 의 regime 이 elevated 또는 stress 이면, 네 문장 중 하나에 다음 문구를
+           글자 그대로 포함한다(다듬거나 바꿔 쓰지 않는다): "%s"
         7. 설명 선호(explain_level)와 익숙한 분야(explain_domain)는 어휘·비유·설명 밀도에만 반영한다.
            어떤 계산에도 넣지 않고, 문장 수도 바꾸지 않는다.
 
         출력 형식 — 아래 JSON 하나만 출력한다. 코드 블록도 설명도 덧붙이지 않는다.
         {"sentences": ["문장1", "문장2", "문장3", "문장4"]}
-        """.formatted(FORECAST_SENTENCE_COUNT);
+        """.formatted(FORECAST_SENTENCE_COUNT, RegimeDisclosureCheck.REQUIRED_DISCLOSURE);
 
     ClaudeExplainPrompt(ObjectMapper mapper) {
         this.mapper = Objects.requireNonNull(mapper, "mapper");

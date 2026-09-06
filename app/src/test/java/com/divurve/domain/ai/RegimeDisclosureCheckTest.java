@@ -61,6 +61,27 @@ class RegimeDisclosureCheckTest {
         assertThat(check.verify(half, Map.of("regime", "elevated"))).isFalse();
     }
 
+    /**
+     * 뜻이 같아도 바꿔 쓴 표현은 통과시키지 않는다 — 실 API 가 explain_level=simple 에서 실제로
+     * 만들어낸 문장이다(이슈 #73). 낱말을 넓히면 규약을 안 지킨 응답까지 새어 들어온다.
+     */
+    @Test
+    void 고정_문구를_바꿔_쓰면_실패한다() {
+        List<String> paraphrased = List.of(
+                "지금은 환율이 평소보다 크게 흔들리는 구간이라, 위에서 안내한 수치와 범위가 "
+                        + "실제와 어긋나는 폭이 평소보다 커질 수 있는 점을 감안해서 봐주세요.");
+
+        assertThat(check.verify(paraphrased, Map.of("regime", "stress"))).isFalse();
+    }
+
+    @Test
+    void 고정_문구가_문장에_그대로_있으면_통과한다() {
+        List<String> exact = List.of(
+                "환율이 흔들리는 정도가 큰 편이라, " + RegimeDisclosureCheck.REQUIRED_DISCLOSURE + ".");
+
+        assertThat(check.verify(exact, Map.of("regime", "elevated"))).isTrue();
+    }
+
     @Test
     void sentences_가_null_이면_실패한다() {
         assertThat(check.verify(null, Map.of("regime", "stress"))).isFalse();

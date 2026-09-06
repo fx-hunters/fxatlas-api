@@ -23,9 +23,19 @@ public class RegimeDisclosureCheck {
     static final String REGIME_ELEVATED = "elevated";
     static final String REGIME_STRESS = "stress";
 
-    /** "변동성" 언급만으로는 부족하다 — 그 결과(오차가 커진다)까지 말해야 안내가 된다. */
-    private static final String VOLATILITY_TERM = "변동성";
-    private static final List<String> WIDENING_TERMS = List.of("오차", "불확실", "커질 수");
+    /**
+     * 급변 구간에 반드시 그대로 들어가야 하는 안내 문구.
+     *
+     * <p><b>왜 낱말 대조가 아니라 고정 문구인가</b>(이슈 #73, 실 API 응답 3회로 확인) —
+     * {@code explain_level=simple} 에서 모델은 매번 다르게 풀어 쓴다: "환율이 움직이는 폭",
+     * "크게 흔들리는 구간", "실제와 어긋나는 폭이 평소보다 커질 수 있는". 뜻은 다 맞는데 낱말이
+     * 매번 달라, 키워드를 넓힐수록 규약을 안 지킨 응답까지 통과시키게 된다.
+     *
+     * <p>§5.1 안내는 표현을 다듬을 문장이 아니라 <b>고지해야 할 문구</b>다. 그래서 프롬프트가
+     * 이 문구를 그대로 넣으라고 지시하고({@code ClaudeExplainPrompt}), 여기서 그대로 들어왔는지
+     * 확인한다. {@code MockAiProvider} 의 상수도 이 문구를 포함한다 — 두 경로가 같은 문장을 낸다.
+     */
+    public static final String REQUIRED_DISCLOSURE = "안내한 수치와 구간의 오차가 평소보다 커질 수 있습니다";
 
     /**
      * 급변 구간이라면 불확실성 확대 안내가 포함됐는지 본다.
@@ -39,8 +49,7 @@ public class RegimeDisclosureCheck {
             return true;
         }
         String joined = String.join(" ", sentences == null ? List.<String>of() : sentences);
-        return joined.contains(VOLATILITY_TERM)
-            && WIDENING_TERMS.stream().anyMatch(joined::contains);
+        return joined.contains(REQUIRED_DISCLOSURE);
     }
 
     private static boolean isWidenRegime(Map<String, Object> facts) {
