@@ -74,7 +74,8 @@ class RiskProfileServiceTest {
         RiskProfileView view = service().reassess(
                 userId, List.of(new AnswerCommand("Q1", 1), new AnswerCommand("Q2", 2), new AnswerCommand("Q3", 3)));
 
-        assertThat(view.riskType()).isEqualTo("balanced");
+        // 합계 6 → aggressive
+        assertThat(view.riskType()).isEqualTo("aggressive");
         assertThat(view.score()).isEqualTo(6);
 
         ArgumentCaptor<RiskProfile> captor = ArgumentCaptor.forClass(RiskProfile.class);
@@ -92,9 +93,9 @@ class RiskProfileServiceTest {
         RiskProfileView view = service().reassess(
                 userId, List.of(new AnswerCommand("Q1", 3), new AnswerCommand("Q2", 3), new AnswerCommand("Q3", 3)));
 
-        assertThat(view.riskType()).isEqualTo("flexible");
+        assertThat(view.riskType()).isEqualTo("challenging");
         assertThat(view.score()).isEqualTo(9);
-        assertThat(existing.getRiskType()).isEqualTo("flexible");
+        assertThat(existing.getRiskType()).isEqualTo("challenging");
         // 기존 프로필을 재사용하므로 사용자 재조회는 하지 않는다.
         verify(userRepository, never()).findById(any());
     }
