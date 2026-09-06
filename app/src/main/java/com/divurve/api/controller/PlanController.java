@@ -4,6 +4,7 @@ import com.divurve.api.dto.plan.ActivePlanResponse;
 import com.divurve.api.dto.plan.PlanCreateRequest;
 import com.divurve.api.dto.plan.PlanPreviewRequest;
 import com.divurve.api.dto.plan.PlanPreviewResponse;
+import com.divurve.api.dto.plan.PlanPreviewResponseMapper;
 import com.divurve.api.dto.plan.PlanResponse;
 import com.divurve.api.dto.plan.PlanVersionListResponse;
 import com.divurve.api.dto.plan.StepCompleteRequest;
@@ -12,8 +13,10 @@ import com.divurve.api.dto.plan.StepSkipResponse;
 import com.divurve.common.architecture.WebAdapter;
 import com.divurve.common.exception.NotImplementedException;
 import com.divurve.common.response.ApiResponse;
+import com.divurve.domain.plan.PlanPreviewService;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.Objects;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,8 +25,9 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 계획 엔드포인트 스텁 (명세 2·3.1·3.7장). 로직 미구현 — 모든 메서드가 501 을 던진다.
+ * 계획 엔드포인트 (명세 2·3.1·3.7장).
  * 경로가 /plans 와 /goals/{id}/plans 를 넘나들어 base 는 /api/v1 로 둔다.
+ * preview 엔드포인트는 구현됨, 나머지는 미구현.
  */
 @WebAdapter
 @RestController
@@ -31,10 +35,28 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Plan", description = "계획 미리보기·확정·회차 실행")
 public class PlanController {
 
+    private final PlanPreviewService planPreviewService;
+    private final PlanPreviewResponseMapper planPreviewResponseMapper;
+
+    public PlanController(PlanPreviewService planPreviewService,
+            PlanPreviewResponseMapper planPreviewResponseMapper) {
+        this.planPreviewService = Objects.requireNonNull(planPreviewService,
+                "PlanPreviewService는 null일 수 없습니다");
+        this.planPreviewResponseMapper = Objects.requireNonNull(planPreviewResponseMapper,
+                "PlanPreviewResponseMapper는 null일 수 없습니다");
+    }
+
     @Operation(summary = "계획 미리보기 (저장하지 않는다)")
     @PostMapping("/plans/preview")
     public ApiResponse<PlanPreviewResponse> preview(@RequestBody PlanPreviewRequest request) {
-        throw new NotImplementedException();
+        var previewInfo = planPreviewService.generatePreview(
+                request.goalId(),
+                request.weeklyBudgetKrw(),
+                request.safeRatio(),
+                request.splitCount()
+        );
+
+        return ApiResponse.of(planPreviewResponseMapper.toResponse(previewInfo));
     }
 
     @Operation(summary = "계획 확정·저장")
