@@ -25,4 +25,11 @@ class BankSpreadTableTest {
         assertThat(BankSpreadTable.baseSpreadRatio(null))
                 .isEqualTo(BankSpreadTable.DEFAULT_BASE_SPREAD_RATIO);
     }
+
+    @Test
+    void isRegistered_는_등록_은행만_참이다() {
+        assertThat(BankSpreadTable.isRegistered("081")).isTrue();
+        assertThat(BankSpreadTable.isRegistered("999")).isFalse();
+        assertThat(BankSpreadTable.isRegistered(null)).isFalse();
+    }
 }
