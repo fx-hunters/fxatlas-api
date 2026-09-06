@@ -38,7 +38,9 @@ public class MockEconomicEventProvider implements EconomicEventProvider {
             new EconomicEvent(startDate.plusDays(25), "ISM Manufacturing PMI", "USD", "Medium"),
             new EconomicEvent(startDate.plusDays(30), "GDP Preliminary Estimate", "USD", "High")
         )
-            .filter(e -> !e.date().isBefore(startDate) && !e.date().isAfter(endDate))
+            // 하한(startDate) 검사는 두지 않는다 — 위 이벤트가 모두 startDate.plusDays(3) 이후로
+            // 생성되므로 항상 참이라 도달 불가능한 분기가 되고, 브랜치 커버리지에서 영구 미커버로 남는다(이슈 #40).
+            .filter(e -> !e.date().isAfter(endDate))
             .toList();
     }
 }

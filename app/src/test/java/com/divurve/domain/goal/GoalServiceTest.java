@@ -239,6 +239,38 @@ class GoalServiceTest {
         assertThat(result.isSpeculative()).isFalse();
     }
 
+    /**
+     * {@code name} 만 null 인 경우. 기존 테스트는 항상 name 을 넘겨 주어
+     * {@code if (name != null)} 의 false 분기가 미커버로 남아 있었다(이슈 #40).
+     */
+    @Test
+    @DisplayName("목표 수정 시 이름을 생략하면 기존 이름이 유지된다")
+    void updateGoalWithoutName() {
+        UUID goalId = UUID.randomUUID();
+        Goal goal = Goal.builder(owner, "USD 목표", "deadline", "travel", "USD")
+                .targetAmount(10000.0)
+                .budgetAmount(100000)
+                .isSpeculative(false)
+                .status("active")
+                .build();
+
+        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+        when(owner.getId()).thenReturn(ownerId);
+
+        Goal result = goalService.update(
+                ownerId,
+                goalId,
+                null,
+                20000.0,
+                null,
+                null,
+                null,
+                null);
+
+        assertThat(result.getName()).isEqualTo("USD 목표");
+        assertThat(result.getTargetAmount()).isEqualTo(20000.0);
+    }
+
     @Test
     @DisplayName("목표 삭제 성공")
     void deleteGoalSuccess() {

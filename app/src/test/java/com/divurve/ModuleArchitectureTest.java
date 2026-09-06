@@ -27,5 +27,9 @@ class ModuleArchitectureTest {
         .layer("Api").definedBy("..api..")
         .whereLayer("Domain").mayOnlyBeAccessedByLayers("Infra", "Api")
         .whereLayer("Engine").mayOnlyBeAccessedByLayers("Domain")
-        .whereLayer("Common").mayOnlyBeAccessedByLayers("Engine", "Domain", "Infra", "Api");
+        .whereLayer("Common").mayOnlyBeAccessedByLayers("Engine", "Domain", "Infra", "Api")
+        // DIP(문서 3장): domain 은 자신을 움직이는 구현이 infra 에 있다는 것을 모른다.
+        // api 도 domain 을 건너뛰고 infra 를 직접 호출하지 않는다. 외부 연동은 전부
+        // domain/port 인터페이스를 거치고, 구현체 주입은 Spring 이 런타임에 한다.
+        .whereLayer("Infra").mayNotBeAccessedByAnyLayer();
 }
