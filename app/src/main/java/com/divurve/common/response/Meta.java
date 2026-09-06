@@ -59,6 +59,20 @@ public record Meta(
         return new Meta(asOf, LIVE, sources, false, null, null);
     }
 
+    /**
+     * {@code data_state} 를 {@link #LIVE} 로 올리고 출처를 채운 새 메타를 만든다 (이슈 #57).
+     *
+     * <p>봉투를 만드는 컨트롤러는 외부 키 설정 여부를 모르므로 일단 {@link #mock(Instant)} 로 만들고,
+     * 응답 직전 {@code MetaDataStateAdvice} 가 이 메서드로 한 번만 덮어쓴다 —
+     * {@code is_demo} 를 채우는 방식과 같다.
+     *
+     * @param sources 실제로 수치에 기여한 출처 목록 (예 {@code ["ECOS"]})
+     * @return {@code data_state=live} 인 새 메타
+     */
+    public Meta asLive(List<String> sources) {
+        return new Meta(asOf, LIVE, sources, isDemo, regime, modelVersion);
+    }
+
     /** 데모 계정 여부를 바꾼 새 메타를 만든다(FR-IS-09). */
     public Meta withDemo(boolean isDemo) {
         return new Meta(asOf, dataState, sources, isDemo, regime, modelVersion);

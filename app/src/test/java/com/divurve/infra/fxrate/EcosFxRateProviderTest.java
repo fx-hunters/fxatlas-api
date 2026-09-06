@@ -114,6 +114,55 @@ class EcosFxRateProviderTest {
         server.verify();
     }
 
+    // ── ECOS 오류 응답 (이슈 #57) — 실패도 HTTP 200 으로 온다 ─────────────────
+
+    @Test
+    void 인증키_오류는_행_없음이_아니라_예외다() {
+        server.expect(method(HttpMethod.GET)).andRespond(withSuccess(
+            """
+            {"RESULT":{"CODE":"INFO-100","MESSAGE":"인증키가 유효하지 않습니다."}}
+            """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> provider().fetchLatest("USD_KRW"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("INFO-100")
+            .hasMessageNotContaining("TEST_KEY");
+    }
+
+    @Test
+    void 자료_없음_코드는_행_없음_예외로_이어진다() {
+        server.expect(method(HttpMethod.GET)).andRespond(withSuccess(
+            """
+            {"RESULT":{"CODE":"INFO-200","MESSAGE":"해당하는 데이터가 없습니다."}}
+            """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> provider().fetchLatest("USD_KRW"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("no rows");
+    }
+
+    @Test
+    void 코드가_없는_RESULT_는_오류로_보지_않는다() {
+        server.expect(method(HttpMethod.GET)).andRespond(withSuccess(
+            """
+            {"RESULT":{"MESSAGE":"설명만 있는 응답"}}
+            """, MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> provider().fetchLatest("USD_KRW"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("no rows");
+    }
+
+    @Test
+    void 본문이_비어_있으면_행_없음_예외다() {
+        server.expect(method(HttpMethod.GET))
+            .andRespond(withSuccess("", MediaType.APPLICATION_JSON));
+
+        assertThatThrownBy(() -> provider().fetchLatest("USD_KRW"))
+            .isInstanceOf(IllegalStateException.class)
+            .hasMessageContaining("no rows");
+    }
+
     @Test
     void null_api_key_throws() {
         props = new EcosProperties("https://ecos.bok.or.kr/api", null, "731Y001", Map.of("USD_KRW", "0000001"));

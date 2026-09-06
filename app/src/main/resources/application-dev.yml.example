@@ -1,0 +1,33 @@
+# ── 로컬 개발 프로파일 템플릿 ──────────────────────────────────────────────
+# 이 파일을 application-dev.yml 로 복사한 뒤 값을 채운다. 복사본은 .gitignore 에 있어 커밋되지 않는다.
+#
+#   cp app/src/main/resources/application-dev.yml.example \
+#      app/src/main/resources/application-dev.yml
+#
+# dev 는 기본 활성 프로파일이므로, 복사본이 없으면 datasource 설정이 비어 기동에 실패한다.
+
+app:
+  frontend-url: http://localhost:5173
+
+  # 외부 API 키. 비워 두면 ECOS 를 쓰는 모든 경로가 실패한다
+  # (/xray · /forecast · /market/regime · /stress — Mock 구현체가 없어 실제 호출만 존재한다).
+  # 키가 채워져 있으면 meta.data_state 가 live 로, sources 가 ["ECOS"] 로 나간다.
+  # 발급: ECOS https://ecos.bok.or.kr/api  ·  FRED https://fredaccount.stlouisfed.org/apikeys
+  # 운영(prod)은 이 파일을 쓰지 않고 ECOS_API_KEY / FRED_API_KEY 환경변수로만 주입한다.
+  external:
+    ecos:
+      api-key: ""
+    fred:
+      api-key: ""
+
+spring:
+  datasource:
+    # 예) docker run -e POSTGRES_USER=divurve -e POSTGRES_PASSWORD=divurve \
+    #         -e POSTGRES_DB=divurve -p 5432:5432 postgres
+    url: jdbc:postgresql://localhost:5432/divurve
+    username: divurve
+    password: divurve
+
+  # 로컬에서는 실행되는 SQL 을 확인하기 편하도록 출력
+  jpa:
+    show-sql: true
