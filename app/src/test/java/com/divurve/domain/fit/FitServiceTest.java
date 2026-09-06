@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 
 import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.DepositRepository;
 import com.divurve.domain.holding.FxAssetValuator;
 import com.divurve.domain.holding.HoldingRepository;
@@ -66,7 +67,7 @@ class FitServiceTest {
                 depositRepository,
                 userRepository,
                 riskProfileService,
-                new FxAssetValuator(fxRateProvider, new QuoteUnitNormalizer()),
+                new FxAssetValuator(new PerUnitFxRates(fxRateProvider, new QuoteUnitNormalizer())),
                 new WeightCalculator(),
                 new ConcentrationCalculator(),
                 new ConcentrationThresholdTable(),

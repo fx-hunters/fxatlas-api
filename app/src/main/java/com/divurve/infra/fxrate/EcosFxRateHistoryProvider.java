@@ -9,6 +9,9 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.cache.annotation.Cacheable;
 import org.springframework.web.client.RestClient;
 
 /**
@@ -21,6 +24,8 @@ import org.springframework.web.client.RestClient;
  */
 @ExternalAdapter
 public class EcosFxRateHistoryProvider implements FxRateHistoryProvider {
+
+    private static final Logger log = LoggerFactory.getLogger(EcosFxRateHistoryProvider.class);
 
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
     private static final ZoneId KST = ZoneId.of("Asia/Seoul");
@@ -38,11 +43,13 @@ public class EcosFxRateHistoryProvider implements FxRateHistoryProvider {
     }
 
     @Override
-    public List<HistoryRateSnapshot> fetchHistorical(String pairCode, LocalDate endDate, int days) {
+    @Cacheable(cacheNames = "fx-history",
+        key = "{#root.args[0], #root.args[1], #root.args[2]}")
+    public List<HistoryRateSnapshot> fetchHistorical(String pairCode, LocalDate endDate, int lookbackCalendarDays) {
         Objects.requireNonNull(pairCode, "pairCode must not be null");
         Objects.requireNonNull(endDate, "endDate must not be null");
-        if (days <= 0) {
-            throw new IllegalArgumentException("days must be positive");
+        if (lookbackCalendarDays <= 0) {
+            throw new IllegalArgumentException("lookbackCalendarDays must be positive");
         }
 
         String itemCode = props.itemCodes().get(pairCode);
@@ -55,16 +62,16 @@ public class EcosFxRateHistoryProvider implements FxRateHistoryProvider {
             .orElseThrow(() -> new IllegalStateException(
                 "ECOS API key is not configured (app.external.ecos.api-key)"));
 
-        LocalDate startDate = endDate.minusDays(days);
+        LocalDate startDate = endDate.minusDays(lookbackCalendarDays);
         String start = startDate.format(YYYYMMDD);
         String end = endDate.format(YYYYMMDD);
 
         String path = "/StatisticSearch/%s/json/kr/1/%d/%s/D/%s/%s/%s".formatted(
-            apiKey, days + 1, props.statCode(), start, end, itemCode
+            apiKey, lookbackCalendarDays + 1, props.statCode(), start, end, itemCode
         );
 
         EcosResponse body = restClient.get().uri(path).retrieve().body(EcosResponse.class);
-        List<EcosRow> rows = extractRows(body);
+        List<EcosRow> rows = extractRows(body, pairCode);
 
         List<HistoryRateSnapshot> snapshots = new ArrayList<>();
         for (EcosRow row : rows) {
@@ -76,7 +83,23 @@ public class EcosFxRateHistoryProvider implements FxRateHistoryProvider {
         return snapshots;
     }
 
-    private List<EcosRow> extractRows(EcosResponse body) {
+    /**
+     * 응답에서 행을 꺼낸다. ECOS 는 실패도 HTTP 200 으로 돌려주므로 {@code RESULT} 블록을 먼저 본다
+     * (이슈 #57). {@code INFO-200}(자료 없음)만 빈 결과로 넘기고, 나머지 오류는 예외로 세운다 —
+     * 인증키 오류가 "데이터 없음"으로 둔갑하면 라이브 전환 실패를 아무도 눈치채지 못한다.
+     */
+    private List<EcosRow> extractRows(EcosResponse body, String pairCode) {
+        EcosResult result = body == null ? null : body.result();
+        if (result != null && !result.isBenign()) {
+            // MESSAGE 는 로그에만 남긴다 — 응답으로 외부 시스템 문구를 그대로 내보내지 않는다.
+            log.warn("ECOS 오류 응답 code={} message={} pair={}",
+                result.code(), result.message(), pairCode);
+            throw new IllegalStateException(
+                "ECOS request failed with result code " + result.code());
+        }
+        if (result != null && result.isNoData()) {
+            return List.of();
+        }
         return Optional.ofNullable(body)
             .map(EcosResponse::statisticSearch)
             .map(StatisticSearch::row)
@@ -85,7 +108,10 @@ public class EcosFxRateHistoryProvider implements FxRateHistoryProvider {
 
     // ── 응답 매핑 ────────────────────────────────────
 
-    record EcosResponse(@com.fasterxml.jackson.annotation.JsonProperty("StatisticSearch") StatisticSearch statisticSearch) {
+    record EcosResponse(
+        @com.fasterxml.jackson.annotation.JsonProperty("StatisticSearch") StatisticSearch statisticSearch,
+        @com.fasterxml.jackson.annotation.JsonProperty("RESULT") EcosResult result
+    ) {
     }
 
     record StatisticSearch(@com.fasterxml.jackson.annotation.JsonProperty("row") List<EcosRow> row) {

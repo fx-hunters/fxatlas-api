@@ -10,7 +10,9 @@ import static org.mockito.Mockito.when;
 
 import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.DepositRepository;
+import com.divurve.domain.holding.FxAssetValuator;
 import com.divurve.domain.holding.HoldingRepository;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
@@ -79,9 +81,8 @@ class StressRunServiceTest {
                 userRepository,
                 holdingRepository,
                 depositRepository,
-                fxRateProvider,
+                new FxAssetValuator(new PerUnitFxRates(fxRateProvider, new QuoteUnitNormalizer())),
                 new StressCalculator(),
-                new QuoteUnitNormalizer(),
                 Clock.fixed(TODAY.atStartOfDay().toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
     }
 
@@ -111,6 +112,28 @@ class StressRunServiceTest {
         assertEquals(SCENARIO_CODE, view.scenario().scenarioCode());
         assertEquals("주가 하락 + 원화 약세", view.scenario().nameKo());
         assertTrue(StressRunService.CONDITIONAL_NOTE.contains("예측이 아니라"));
+    }
+
+    @Test
+    @DisplayName("어댑터가 고시하지 않는 통화는 평가에서 빠질 뿐 실행을 막지 않는다 — /xray 와 같은 규약 (이슈 #57)")
+    void skipsCurrenciesWithoutRate() {
+        givenUser();
+        givenScenario(SCENARIO_CODE, "0.0000", "0.0000");
+        when(fxRateProvider.fetchLatest("USD_KRW"))
+                .thenReturn(rateSnapshot("USD_KRW", new BigDecimal("1382.40")));
+        // GBP 는 ECOS item-code 가 없다. 예전에는 이 예외가 그대로 올라가 400 이 났다.
+        when(fxRateProvider.fetchLatest("GBP_KRW"))
+                .thenThrow(new IllegalArgumentException("Unsupported pairCode for ECOS: GBP_KRW"));
+        when(holdingRepository.findByOwner_Id(USER_ID))
+                .thenReturn(List.of(holding("USD", 100.0), holding("GBP", 100.0)));
+        when(depositRepository.findByOwner_Id(USER_ID)).thenReturn(List.of(deposit("GBP", "1000")));
+        givenSaveEchoesBack();
+
+        StressRunService.RunView view = service.run(USER_ID, SCENARIO_CODE);
+
+        // USD 100 × 1,382.40 = 138,240 만 남는다. GBP 종목·예금은 빠진다.
+        assertEquals(138_240L, view.equityAssetKrw());
+        assertEquals(138_240L, view.fxAssetBeforeKrw());
     }
 
     @Test

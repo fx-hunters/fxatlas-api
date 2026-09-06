@@ -7,6 +7,8 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.boot.web.client.ClientHttpRequestFactories;
+import org.springframework.boot.web.client.ClientHttpRequestFactorySettings;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.caffeine.CaffeineCacheManager;
@@ -28,11 +30,35 @@ public class ExternalDataConfig {
 
     static final Duration EXTERNAL_CACHE_TTL = Duration.ofHours(6);
     static final long EXTERNAL_CACHE_MAX_SIZE = 500;
-    static final List<String> EXTERNAL_CACHE_NAMES = List.of("fx-latest", "macro-latest");
+
+    /**
+     * 캐시 이름은 각 어댑터의 {@code @Cacheable} 과 정확히 일치해야 한다 — 여기 없는 이름을 쓰면
+     * {@code CaffeineCacheManager} 가 해당 캐시를 만들지 않아 <b>조용히 캐시가 없는 상태</b>가 된다.
+     *
+     * <p>{@code fx-history} 는 이슈 #57 에서 추가했다. 가장 무거운 호출인데 캐시가 없었다 —
+     * {@code /forecast}·{@code /market/regime} 이 열릴 때마다 통화쌍별로 5년치(약 1,400 관측)를
+     * 새로 받아 변동성·백분위를 다시 계산했다.
+     */
+    static final List<String> EXTERNAL_CACHE_NAMES =
+        List.of("fx-latest", "fx-history", "macro-latest");
+
+    /** 연결 타임아웃 — 외부가 응답하지 않을 때 요청 스레드를 붙잡아 두지 않는다. */
+    static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(3);
+
+    /**
+     * 읽기 타임아웃. 5년치 시계열은 응답이 크므로 단건 조회보다 넉넉히 준다.
+     * 타임아웃이 없으면 ECOS 지연이 그대로 우리 서비스의 지연이 된다.
+     */
+    static final Duration READ_TIMEOUT = Duration.ofSeconds(15);
 
     @Bean
     RestClient externalRestClient() {
-        return RestClient.builder().build();
+        return RestClient.builder()
+            .requestFactory(ClientHttpRequestFactories.get(
+                ClientHttpRequestFactorySettings.DEFAULTS
+                    .withConnectTimeout(CONNECT_TIMEOUT)
+                    .withReadTimeout(READ_TIMEOUT)))
+            .build();
     }
 
     @Bean

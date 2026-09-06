@@ -12,6 +12,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.divurve.common.exception.InvalidRequestException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.DepositRepository;
 import com.divurve.domain.holding.HoldingRepository;
 import com.divurve.domain.holding.entity.Deposit;
@@ -21,6 +22,7 @@ import com.divurve.domain.port.FxRateHistoryProvider;
 import com.divurve.domain.port.FxRateProvider;
 import com.divurve.domain.port.RateSnapshot;
 import com.divurve.domain.user.entity.User;
+import com.divurve.engine.fx.CrossRateDeriver;
 import com.divurve.engine.volatility.RegimeClassifier;
 import com.divurve.engine.weight.QuoteUnitNormalizer;
 import java.math.BigDecimal;
@@ -71,14 +73,16 @@ class ForecastServiceTest {
 
     @BeforeEach
     void setUp() {
+        PerUnitFxRates perUnitFxRates =
+                new PerUnitFxRates(fxRateProvider, new QuoteUnitNormalizer());
         service = new ForecastService(
-                fxRateProvider,
-                historyProvider,
+                new CrossRateResolver(historyProvider, perUnitFxRates,
+                        new CrossRateDeriver(), new QuoteUnitNormalizer()),
+                perUnitFxRates,
                 eventProvider,
                 holdingRepository,
                 depositRepository,
                 new RegimeClassifier(),
-                new QuoteUnitNormalizer(),
                 Clock.fixed(TODAY.atStartOfDay().toInstant(ZoneOffset.UTC), ZoneOffset.UTC));
     }
 

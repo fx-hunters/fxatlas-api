@@ -7,6 +7,7 @@ import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.holding.DepositRepository;
 import com.divurve.domain.holding.FxAssetValuator;
 import com.divurve.domain.holding.HoldingRepository;
@@ -74,7 +75,7 @@ class XrayServiceTest {
                 krwAssetRepository,
                 userRepository,
                 riskProfileService,
-                new FxAssetValuator(fxRateProvider, new QuoteUnitNormalizer()),
+                new FxAssetValuator(new PerUnitFxRates(fxRateProvider, new QuoteUnitNormalizer())),
                 new WeightCalculator(),
                 new AttributionCalculator(),
                 new ConcentrationCalculator(),
@@ -343,7 +344,7 @@ class XrayServiceTest {
         assertThatThrownBy(() -> new XrayService(
                 null, null, null, null, null, null, null, null, null, null))
                 .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new FxAssetValuator(null, null))
+        assertThatThrownBy(() -> new FxAssetValuator(null))
                 .isInstanceOf(NullPointerException.class);
     }
 }

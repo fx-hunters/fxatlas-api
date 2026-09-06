@@ -7,6 +7,7 @@ import com.divurve.engine.concentration.ConcentrationThresholdTable;
 import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.cost.EffectiveSpreadCalculator;
 import com.divurve.engine.diversification.DiversificationSimulator;
+import com.divurve.engine.fx.CrossRateDeriver;
 import com.divurve.engine.riskprofile.DetailDiagnosisMapper;
 import com.divurve.engine.riskprofile.RiskProfileScorer;
 import com.divurve.engine.simulate.MonteCarloSimulator;
@@ -78,6 +79,12 @@ public class EngineConfig {
     @Bean
     public ConcentrationThresholdTable concentrationThresholdTable() {
         return new ConcentrationThresholdTable();
+    }
+
+    /** 삼각 유도 환율 — ECOS 가 원화 크로스만 주므로 USDJPY·EURUSD 는 비로 만든다 (이슈 #57). */
+    @Bean
+    public CrossRateDeriver crossRateDeriver() {
+        return new CrossRateDeriver();
     }
 
     @Bean
