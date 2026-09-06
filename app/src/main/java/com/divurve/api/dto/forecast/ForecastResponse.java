@@ -1,6 +1,7 @@
 package com.divurve.api.dto.forecast;
 
 import com.divurve.domain.forecast.ForecastService;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.util.List;
@@ -20,6 +21,12 @@ import java.util.List;
  * {@code realized_30d} → {@code vol_30d}, {@code percentile_5y} → {@code vol_percentile_5y},
  * {@code interval_80.vs_3y_avg} 삭제(근거 없는 상수 0 이었다),
  * {@code base_date}·{@code labels}·{@code model_info}·{@code uncertainty_note} 신설.
+ *
+ * <p>{@code interval_80}·{@code vol_30d}·{@code vol_percentile_5y}·{@code per_1pct_krw} 는
+ * 전역 SNAKE_CASE 전략이 다음절 단어 뒤 숫자 앞에 밑줄을 넣지 않으므로 {@link JsonProperty} 로
+ * 명세의 키를 그대로 고정한다(이슈 #60). {@code p50Lo}·{@code p50Hi}·{@code p80Lo}·{@code p80Hi} 는
+ * 대문자 {@code L}·{@code H} 앞에서 전략이 정상 동작해 이미 {@code p50_lo} 등으로 나가지만, 같은
+ * 이유로 명세 키를 명시적으로 고정해 둔다.
  */
 @Schema(description = "예측 범위·변동성·내 자산 영향. 방향 확률 필드는 두지 않는다.")
 public record ForecastResponse(
@@ -39,7 +46,7 @@ public record ForecastResponse(
         @Schema(description = "L2 — 모델의 참고 중심 경로. 표시 전용이며 계산 입력이 아니다(FR-FC-12).")
         List<ModelPoint> modelPath,
 
-        @Schema(description = "지평 끝 80퍼센트 구간") Interval interval80,
+        @Schema(description = "지평 끝 80퍼센트 구간") @JsonProperty("interval_80") Interval interval80,
         @Schema(description = "L1 — 변동성 지표") Volatility volatility,
         @Schema(description = "환율 1퍼센트 변동 시 내 자산 영향") UserImpact userImpact,
         @Schema(description = "음영·경로의 표시 라벨") Labels labels,
@@ -95,7 +102,12 @@ public record ForecastResponse(
      * @param p80Hi 80퍼센트 구간 상단
      */
     @Schema(description = "예측 범위 한 점 (50·80퍼센트 경계)")
-    public record Band(LocalDate d, double p50Lo, double p50Hi, double p80Lo, double p80Hi) {
+    public record Band(
+            LocalDate d,
+            @JsonProperty("p50_lo") double p50Lo,
+            @JsonProperty("p50_hi") double p50Hi,
+            @JsonProperty("p80_lo") double p80Lo,
+            @JsonProperty("p80_hi") double p80Hi) {
     }
 
     /**
@@ -131,8 +143,9 @@ public record ForecastResponse(
      */
     @Schema(description = "변동성 지표. 예측 범위(band)와는 별개 지표다(FR-FC-04·05).")
     public record Volatility(
-            @Schema(example = "0.061") double vol30d,
-            @Schema(description = "5년 변동성 백분위 (0~1 비율)", example = "0.72") double volPercentile5y,
+            @Schema(example = "0.061") @JsonProperty("vol_30d") double vol30d,
+            @Schema(description = "5년 변동성 백분위 (0~1 비율)", example = "0.72")
+            @JsonProperty("vol_percentile_5y") double volPercentile5y,
             @Schema(allowableValues = {"calm", "normal", "elevated", "stress"}, example = "elevated")
             String regime) {
     }
@@ -145,7 +158,7 @@ public record ForecastResponse(
      */
     @Schema(description = "환율 1퍼센트 변동 시 내 자산 영향")
     public record UserImpact(
-            @Schema(example = "157900") long per1pctKrw,
+            @Schema(example = "157900") @JsonProperty("per_1pct_krw") long per1pctKrw,
             @Schema(example = "15790000") long assetKrw) {
     }
 

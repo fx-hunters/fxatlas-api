@@ -1,6 +1,7 @@
 package com.divurve.api.dto.market;
 
 import com.divurve.domain.market.MarketRegimeService;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -11,6 +12,9 @@ import java.util.Map;
  *
  * <p>v1 의 {@code GET /system/safe-mode} 를 대체한다. <b>상태를 알리되 기능을 끄지 않는다</b> —
  * v1 어휘였던 "안전모드"와 {@code 503 SAFE_MODE_ACTIVE} 는 명세 v2 §0.1 에서 삭제됐다.
+ *
+ * <p>{@code vol_30d}·{@code vol_percentile_5y} 는 전역 SNAKE_CASE 전략이 숫자 앞에 밑줄을 넣지
+ * 않으므로 {@link JsonProperty} 로 명세의 키를 그대로 고정한다(이슈 #60).
  */
 @Schema(description = "시장 상태 배지와 판정 근거. 어떤 상태에서도 응답을 막지 않는다.")
 public record MarketRegimeResponse(
@@ -71,10 +75,10 @@ public record MarketRegimeResponse(
             String regime,
 
             @Schema(description = "30일 실현변동성 (연환산)", example = "0.061")
-            double vol30d,
+            @JsonProperty("vol_30d") double vol30d,
 
             @Schema(description = "5년 변동성 백분위 (0~1 비율)", example = "0.72")
-            double volPercentile5y) {
+            @JsonProperty("vol_percentile_5y") double volPercentile5y) {
     }
 
     /**

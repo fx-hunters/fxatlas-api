@@ -1,6 +1,7 @@
 package com.divurve.api.dto.home;
 
 import com.divurve.api.dto.forecast.EventsResponse.Event;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.LocalDate;
 import java.util.List;
@@ -9,6 +10,9 @@ import java.util.List;
  * 홈 요약 조회 응답 (GET /home/summary, API 명세 v2 §5.11).
  * 6블록 순서는 고정이며 서버가 사용자별로 재정렬하지 않는다(FR-HM-07, NFR-UI-01).
  * 데이터가 없는 블록도 생략하지 않고 {@code state} 로만 구분한다.
+ *
+ * <p>{@code sensitivity_1pct_krw}·{@code interval_80} 은 전역 SNAKE_CASE 전략이 숫자 앞에
+ * 밑줄을 넣지 않으므로 {@link JsonProperty} 로 명세의 키를 그대로 고정한다(이슈 #60).
  */
 public record HomeSummaryResponse(
         List<BlockDto> blocks,
@@ -42,7 +46,7 @@ public record HomeSummaryResponse(
     public record FxStatusDto(
             @Schema(example = "0.361") double fxRatio,
             @Schema(example = "USD") String topCurrencyCode,
-            @Schema(example = "247200") long sensitivity1pctKrw,
+            @Schema(example = "247200") @JsonProperty("sensitivity_1pct_krw") long sensitivity1pctKrw,
             @Schema(example = "84000") Long dayChangeKrw) {
     }
 
@@ -66,7 +70,7 @@ public record HomeSummaryResponse(
     public record ForecastDto(
             @Schema(example = "USDKRW") String pairCode,
             @Schema(example = "1382.40") double currentRate,
-            Interval80Dto interval80) {
+            @JsonProperty("interval_80") Interval80Dto interval80) {
     }
 
     /** 80퍼센트 예측 구간. */
