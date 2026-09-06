@@ -55,14 +55,22 @@ public class SafeModeService {
      * 사용자의 현재 안전모드 상태를 평가한다.
      *
      * @param userId 평가 대상 사용자 ID
-     * @return 안전모드 평가 결과
+     * @return 안전모드 평가 결과 (도메인 뷰)
      */
     @Transactional(readOnly = true)
-    public SafeModeCheckResult evaluateSafeMode(UUID userId) {
+    public SafeModeView evaluateSafeMode(UUID userId) {
         Objects.requireNonNull(userId, "userId는 null일 수 없습니다.");
 
         SafeModeEvaluation evaluation = buildEvaluation(userId);
-        return safeModeEvaluator.evaluate(evaluation);
+        return toView(safeModeEvaluator.evaluate(evaluation));
+    }
+
+    /** engine 계산 결과를 도메인 뷰로 변환한다 — api 가 engine 타입을 직접 참조하지 않도록 하는 경계. */
+    private SafeModeView toView(SafeModeCheckResult result) {
+        List<SafeModeView.Check> checks = result.checks().stream()
+            .map(c -> new SafeModeView.Check(c.key(), c.passed(), c.reason()))
+            .toList();
+        return new SafeModeView(result.active(), result.status(), checks);
     }
 
     /**
