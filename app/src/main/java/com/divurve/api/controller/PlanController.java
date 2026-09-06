@@ -28,6 +28,7 @@ import com.divurve.domain.plan.entity.PlanStep;
 import com.divurve.domain.route.RouteFeatureFlag;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
+import jakarta.validation.Valid;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -97,7 +98,7 @@ public class PlanController {
     @PostMapping("/plans/preview")
     public ApiResponse<PlanPreviewResponse> preview(
             @CurrentUser UUID userId,
-            @RequestBody PlanPreviewRequest request) {
+            @Valid @RequestBody PlanPreviewRequest request) {
         routeFeatureFlag.requireEnabled();
         planAccessService.requireGoalOwner(userId, UUID.fromString(request.goalId()));
 

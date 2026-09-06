@@ -108,7 +108,25 @@ public class GlobalExceptionHandler {
         return badRequest("요청 헤더의 Content-Type 값을 지원하지 않습니다.", null);
     }
 
-    /** DB 제약 위반(유니크 등) → 409. SQL 원문·제약명은 노출하지 않는다. */
+    /**
+     * DB 제약 위반(유니크·NOT NULL·FK 등) → 409. SQL 원문·제약명은 노출하지 않는다.
+     *
+     * <p><b>NOT NULL 위반과 유니크 위반을 구분하지 않기로 결정했다 (이슈 #75).</b> 근거:
+     * <ul>
+     *   <li>이 핸들러에 NOT NULL 위반이 실제로 도달하는 경로는 요청 DTO 에 Bean Validation
+     *       (`@NotBlank`/`@NotNull`)이 빠진 곳뿐이다. 이슈 #75 에서 그 경로를 전수 점검해
+     *       `@Valid` 를 채웠으므로, 이 예외가 여전히 잡힌다면 그 자체가 "검증 누락 회귀"
+     *       신호다 — 방어선은 입력 경계(컨트롤러)에 두고, 이 핸들러는 안전망으로만 남긴다.</li>
+     *   <li>제약 종류(NOT NULL vs UNIQUE vs FK)를 구분하려면 Hibernate 가 감싼
+     *       {@code ConstraintViolationException} 의 {@code getConstraintName()} 이나 SQLState 를
+     *       읽어야 하는데, 둘 다 DB 벤더(PostgreSQL) 의 오류 포맷에 종속된다. 이 레포는 DB 를
+     *       PostgreSQL 로 고정했지만(CLAUDE.md §2), 그 결합을 예외 매핑 계층에까지 들이는 것은
+     *       팀이 아직 합의하지 않은 비용이라 지금은 들이지 않는다.</li>
+     *   <li>남는 위험: {@code POST /goals} 는 이슈 #75 범위 밖(별도 이슈)이라 검증을 추가하지
+     *       않았다 — 거기서 이름이 비면 지금도 이 핸들러를 타고 409 로 잘못 나간다. 그 이슈가
+     *       처리되기 전까지는 이 지점이 유일하게 남은 회색지대다.</li>
+     * </ul>
+     */
     @ExceptionHandler(DataIntegrityViolationException.class)
     public ResponseEntity<ErrorResponse> handleDataIntegrityViolation(DataIntegrityViolationException ex) {
         log.warn("데이터 무결성 제약 위반", ex);
