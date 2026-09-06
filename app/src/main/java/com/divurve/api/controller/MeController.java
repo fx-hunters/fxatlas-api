@@ -10,14 +10,17 @@ import com.divurve.api.dto.me.RiskProfileUpdateRequest;
 import com.divurve.api.dto.me.SettingsResponse;
 import com.divurve.api.dto.me.SettingsUpdateRequest;
 import com.divurve.common.architecture.WebAdapter;
-import com.divurve.common.exception.NotImplementedException;
 import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.port.AuthPrincipal;
+import com.divurve.domain.settings.NotificationSettingsService;
+import com.divurve.domain.settings.NotificationSettingsService.NotificationSettingsView;
 import com.divurve.domain.settings.RiskProfileService;
 import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.settings.SettingsView;
 import com.divurve.domain.settings.UserSettingsService;
+import com.divurve.domain.user.UserProfileService;
+import com.divurve.domain.user.UserProfileService.ProfileView;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -29,8 +32,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
- * 마이페이지 엔드포인트 (명세 2장, 이슈 #10). 투자성향(risk-profile)·설정(settings)은 실구현이고,
- * 프로필·알림 설정은 아직 501 을 던진다. 요청 주체는 {@link CurrentUserContext} 에서 해석한다.
+ * 마이페이지 엔드포인트 (명세 2장, 이슈 #10, #21). 프로필·투자성향·설정·알림을 모두 실구현한다.
+ * 요청 주체는 {@link CurrentUserContext} 에서 해석한다.
  */
 @WebAdapter
 @RestController
@@ -38,24 +41,34 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "MyPage", description = "프로필·투자성향·설정·알림")
 public class MeController {
 
+    private final UserProfileService userProfileService;
     private final RiskProfileService riskProfileService;
     private final UserSettingsService userSettingsService;
+    private final NotificationSettingsService notificationSettingsService;
 
-    public MeController(RiskProfileService riskProfileService, UserSettingsService userSettingsService) {
+    public MeController(
+            UserProfileService userProfileService,
+            RiskProfileService riskProfileService,
+            UserSettingsService userSettingsService,
+            NotificationSettingsService notificationSettingsService) {
+        this.userProfileService = userProfileService;
         this.riskProfileService = riskProfileService;
         this.userSettingsService = userSettingsService;
+        this.notificationSettingsService = notificationSettingsService;
     }
 
     @Operation(summary = "프로필 조회")
     @GetMapping
     public ApiResponse<ProfileResponse> getProfile() {
-        throw new NotImplementedException();
+        ProfileView profile = userProfileService.getProfile(currentUserId());
+        return ApiResponse.of(toProfileResponse(profile));
     }
 
     @Operation(summary = "프로필 수정")
     @PutMapping
     public ApiResponse<ProfileResponse> updateProfile(@RequestBody ProfileUpdateRequest request) {
-        throw new NotImplementedException();
+        ProfileView profile = userProfileService.updateProfile(currentUserId(), request.name());
+        return ApiResponse.of(toProfileResponse(profile));
     }
 
     @Operation(summary = "현재 투자성향과 응답 내역 조회")
@@ -94,7 +107,13 @@ public class MeController {
     @PutMapping("/notifications")
     public ApiResponse<NotificationSettingsResponse> updateNotifications(
             @RequestBody NotificationSettingsRequest request) {
-        throw new NotImplementedException();
+        NotificationSettingsView settings = notificationSettingsService.updateNotifications(
+                currentUserId(),
+                request.exchangeScheduleReminder(),
+                request.reviewRequiredAlert(),
+                request.deadlineApproachAlert(),
+                request.bucketEntryAlert());
+        return ApiResponse.of(toNotificationSettingsResponse(settings));
     }
 
     /** 현재 요청 주체의 사용자 id. 인증 컨텍스트가 없으면 401. */
@@ -119,5 +138,17 @@ public class MeController {
                 view.explainDomain(),
                 view.baseSpreadRatio(),
                 view.effectiveSpreadRatio());
+    }
+
+    private ProfileResponse toProfileResponse(ProfileView view) {
+        return new ProfileResponse(view.userId().toString(), view.email(), view.name(), view.isDemo());
+    }
+
+    private NotificationSettingsResponse toNotificationSettingsResponse(NotificationSettingsView view) {
+        return new NotificationSettingsResponse(
+                view.exchangeScheduleReminder(),
+                view.reviewRequiredAlert(),
+                view.deadlineApproachAlert(),
+                view.bucketEntryAlert());
     }
 }

@@ -16,10 +16,12 @@ import org.hibernate.annotations.Generated;
 import org.hibernate.generator.EventType;
 
 /**
- * 사용자 표시·거래 설정 (이슈 #10, FR-MY-03·FR-MY-04, ERD v3.0). 사용자당 하나.
+ * 사용자 표시·거래·알림 설정 (이슈 #10, #21). 사용자당 하나.
  * {@code explain_level}(설명 선호 3단계)·{@code explain_domain}(익숙한 설명 분야)은 문구·비유·설명 밀도에만 쓰고
  * 금액·위험 판정 계산에는 절대 들어가지 않는다(FR-MY-03).
  * {@code default_bank_code}·{@code fx_discount_ratio}(주거래 은행·환전 우대율)는 실효 스프레드 계산의 입력이다(FR-MY-04).
+ * 알림 4종({@code exchange_schedule_reminder}·{@code review_required_alert}·{@code deadline_approach_alert}·{@code bucket_entry_alert})은
+ * 모두 boolean 타입으로 기본값은 true(활성화)다(FR-MY-05, FR-MY-06).
  */
 @Entity
 @Table(name = "user_settings")
@@ -46,6 +48,18 @@ public class UserSettings {
     @Column(name = "explain_domain", nullable = false)
     private String explainDomain;
 
+    @Column(name = "exchange_schedule_reminder", nullable = false)
+    private boolean exchangeScheduleReminder = true;
+
+    @Column(name = "review_required_alert", nullable = false)
+    private boolean reviewRequiredAlert = true;
+
+    @Column(name = "deadline_approach_alert", nullable = false)
+    private boolean deadlineApproachAlert = true;
+
+    @Column(name = "bucket_entry_alert", nullable = false)
+    private boolean bucketEntryAlert = true;
+
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
@@ -61,6 +75,10 @@ public class UserSettings {
         this.fxDiscountRatio = fxDiscountRatio;
         this.explainLevel = explainLevel;
         this.explainDomain = explainDomain;
+        this.exchangeScheduleReminder = true;
+        this.reviewRequiredAlert = true;
+        this.deadlineApproachAlert = true;
+        this.bucketEntryAlert = true;
     }
 
     /** 새 설정을 만든다. id/created_at 은 저장 시점에 DB 가 채운다. */
@@ -69,12 +87,22 @@ public class UserSettings {
         return new UserSettings(owner, defaultBankCode, fxDiscountRatio, explainLevel, explainDomain);
     }
 
-    /** 설정값을 갱신한다. */
+    /** 표시·거래 설정값을 갱신한다. */
     public void update(String defaultBankCode, double fxDiscountRatio, String explainLevel, String explainDomain) {
         this.defaultBankCode = defaultBankCode;
         this.fxDiscountRatio = fxDiscountRatio;
         this.explainLevel = explainLevel;
         this.explainDomain = explainDomain;
+    }
+
+    /** 알림 설정을 갱신한다. */
+    public void updateNotifications(
+            boolean exchangeScheduleReminder, boolean reviewRequiredAlert,
+            boolean deadlineApproachAlert, boolean bucketEntryAlert) {
+        this.exchangeScheduleReminder = exchangeScheduleReminder;
+        this.reviewRequiredAlert = reviewRequiredAlert;
+        this.deadlineApproachAlert = deadlineApproachAlert;
+        this.bucketEntryAlert = bucketEntryAlert;
     }
 
     public UUID getId() {
@@ -103,5 +131,21 @@ public class UserSettings {
 
     public Instant getCreatedAt() {
         return createdAt;
+    }
+
+    public boolean isExchangeScheduleReminder() {
+        return exchangeScheduleReminder;
+    }
+
+    public boolean isReviewRequiredAlert() {
+        return reviewRequiredAlert;
+    }
+
+    public boolean isDeadlineApproachAlert() {
+        return deadlineApproachAlert;
+    }
+
+    public boolean isBucketEntryAlert() {
+        return bucketEntryAlert;
     }
 }

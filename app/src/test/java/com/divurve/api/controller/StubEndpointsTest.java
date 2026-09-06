@@ -20,9 +20,8 @@ class StubEndpointsTest {
     // signup/login/refresh 스텁은 authDemoService 를 건드리지 않으므로 null 로 충분하다.
     // demo() 는 실구현되어 이 스텁 목록에서 제외되고, 매핑은 AuthControllerTest 가 검증한다.
     private final AuthController auth = new AuthController(null);
-    // risk-profile/settings 는 실구현되어 이 스텁 목록에서 제외 — MeControllerTest 가 매핑을 검증한다.
-    // 남은 스텁(getProfile/updateProfile/updateNotifications)은 서비스를 건드리지 않으므로 null 로 충분하다.
-    private final MeController me = new MeController(null, null);
+    // getProfile/updateProfile/updateNotifications 과 risk-profile/settings 는 모두 실구현되어
+    // 스텁 목록에서 제외 — MeControllerTest 가 모든 매핑을 검증한다.
     // holdings/deposits 는 실구현되어 이 스텁 목록에서 제외 — AssetControllerTest 가 매핑을 검증한다.
     private final XrayController xray = new XrayController();
     private final FitController fit = new FitController();
@@ -40,10 +39,7 @@ class StubEndpointsTest {
                 () -> auth.signup(null),
                 () -> auth.login(null),
                 () -> auth.refresh(null),
-                // MyPage
-                me::getProfile,
-                () -> me.updateProfile(null),
-                () -> me.updateNotifications(null),
+                // MyPage — 모두 실구현됨, MeControllerTest 참고
                 // X-ray
                 xray::getXray,
                 () -> xray.getAttribution(null, null),

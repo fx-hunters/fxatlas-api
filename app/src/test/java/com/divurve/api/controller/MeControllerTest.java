@@ -7,6 +7,10 @@ import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.when;
 
 import com.divurve.api.config.auth.CurrentUserContext;
+import com.divurve.api.dto.me.NotificationSettingsRequest;
+import com.divurve.api.dto.me.NotificationSettingsResponse;
+import com.divurve.api.dto.me.ProfileResponse;
+import com.divurve.api.dto.me.ProfileUpdateRequest;
 import com.divurve.api.dto.me.RiskProfileResponse;
 import com.divurve.api.dto.me.RiskProfileUpdateRequest;
 import com.divurve.api.dto.me.SettingsResponse;
@@ -14,11 +18,15 @@ import com.divurve.api.dto.me.SettingsUpdateRequest;
 import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.port.AuthPrincipal;
+import com.divurve.domain.settings.NotificationSettingsService;
+import com.divurve.domain.settings.NotificationSettingsService.NotificationSettingsView;
 import com.divurve.domain.settings.RiskProfileService;
 import com.divurve.domain.settings.RiskProfileService.AnswerCommand;
 import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.settings.SettingsView;
 import com.divurve.domain.settings.UserSettingsService;
+import com.divurve.domain.user.UserProfileService;
+import com.divurve.domain.user.UserProfileService.ProfileView;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.AfterEach;
@@ -35,14 +43,18 @@ import org.mockito.junit.jupiter.MockitoExtension;
 class MeControllerTest {
 
     @Mock
+    private UserProfileService userProfileService;
+    @Mock
     private RiskProfileService riskProfileService;
     @Mock
     private UserSettingsService userSettingsService;
+    @Mock
+    private NotificationSettingsService notificationSettingsService;
 
     private final UUID userId = UUID.randomUUID();
 
     private MeController controller() {
-        return new MeController(riskProfileService, userSettingsService);
+        return new MeController(userProfileService, riskProfileService, userSettingsService, notificationSettingsService);
     }
 
     private void authenticate() {
@@ -132,6 +144,45 @@ class MeControllerTest {
                 .updateSettings(new SettingsUpdateRequest("081", 0.5, "standard", "finance"));
 
         assertThat(response.data().effectiveSpreadRatio()).isEqualTo(0.00825);
+    }
+
+    @Test
+    void getProfile_은_프로필을_래핑한다() {
+        authenticate();
+        when(userProfileService.getProfile(userId)).thenReturn(
+                new ProfileView(userId, "test@example.com", "테스트사용자", false));
+
+        ApiResponse<ProfileResponse> response = controller().getProfile();
+
+        assertThat(response.data().email()).isEqualTo("test@example.com");
+        assertThat(response.data().name()).isEqualTo("테스트사용자");
+        assertThat(response.data().isDemo()).isFalse();
+    }
+
+    @Test
+    void updateProfile_은_이름을_수정하고_결과를_래핑한다() {
+        authenticate();
+        when(userProfileService.updateProfile(userId, "새이름")).thenReturn(
+                new ProfileView(userId, "test@example.com", "새이름", false));
+
+        ApiResponse<ProfileResponse> response = controller().updateProfile(new ProfileUpdateRequest("새이름"));
+
+        assertThat(response.data().name()).isEqualTo("새이름");
+    }
+
+    @Test
+    void updateNotifications_은_알림설정을_갱신하고_결과를_래핑한다() {
+        authenticate();
+        when(notificationSettingsService.updateNotifications(userId, true, false, true, false))
+                .thenReturn(new NotificationSettingsView(true, false, true, false));
+
+        NotificationSettingsRequest request = new NotificationSettingsRequest(true, false, true, false);
+        ApiResponse<NotificationSettingsResponse> response = controller().updateNotifications(request);
+
+        assertThat(response.data().exchangeScheduleReminder()).isTrue();
+        assertThat(response.data().reviewRequiredAlert()).isFalse();
+        assertThat(response.data().deadlineApproachAlert()).isTrue();
+        assertThat(response.data().bucketEntryAlert()).isFalse();
     }
 
     @Test
