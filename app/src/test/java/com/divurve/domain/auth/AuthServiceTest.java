@@ -2,11 +2,14 @@ package com.divurve.domain.auth;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.catchThrowableOfType;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import com.divurve.common.exception.DuplicateResourceException;
+import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.domain.auth.AuthService.AuthResult;
 import com.divurve.domain.port.AuthPrincipal;
 import com.divurve.domain.port.AuthTokens;
@@ -18,6 +21,7 @@ import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.crypto.bcrypt.BCryptPasswordEncoder;
 
 /**
@@ -74,8 +78,24 @@ class AuthServiceTest {
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(existingUser));
 
         assertThatThrownBy(() -> authService.signup(email, password, name))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Email already exists");
+                .isInstanceOf(DuplicateResourceException.class)
+                .hasMessage("이미 사용 중인 이메일입니다.");
+    }
+
+    /** 명세 §1.3 — 중복 이메일은 409 DUPLICATE_RESOURCE, field 는 email 이어야 한다. */
+    @Test
+    void signup_emailAlreadyExists_은_409_DUPLICATE_RESOURCE_이고_field_는_email_이다() {
+        String email = "user@example.com";
+        User existingUser = User.create(email, "User Name", "hashed");
+        when(userRepository.findByEmail(email)).thenReturn(Optional.of(existingUser));
+
+        DuplicateResourceException thrown = catchThrowableOfType(
+                () -> authService.signup(email, "password123", "User Name"),
+                DuplicateResourceException.class);
+
+        assertThat(thrown.getStatus()).isEqualTo(HttpStatus.CONFLICT);
+        assertThat(thrown.getCode()).isEqualTo("DUPLICATE_RESOURCE");
+        assertThat(thrown.getField()).isEqualTo("email");
     }
 
     @Test
@@ -141,8 +161,8 @@ class AuthServiceTest {
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.login(email, password))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("User not found");
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
     }
 
     @Test
@@ -156,8 +176,47 @@ class AuthServiceTest {
         when(userRepository.findByEmail(email)).thenReturn(Optional.of(user));
 
         assertThatThrownBy(() -> authService.login(email, wrongPassword))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Invalid password");
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("이메일 또는 비밀번호가 올바르지 않습니다.");
+    }
+
+    /**
+     * 사용자 열거(user enumeration) 방지 회귀 테스트 (이슈 #61) — "없는 이메일"과 "비밀번호 불일치"는
+     * 상태코드·에러코드·메시지가 완전히 같아야 공격자가 가입 여부를 추론할 수 없다.
+     */
+    @Test
+    void login_없는_이메일과_틀린_비밀번호는_구분되지_않는_401_이다() {
+        String knownEmail = "known@example.com";
+        String unknownEmail = "unknown@example.com";
+        String correctPassword = "password123";
+        String passwordHash = new BCryptPasswordEncoder().encode(correctPassword);
+
+        User user = User.create(knownEmail, "User Name", passwordHash);
+        when(userRepository.findByEmail(knownEmail)).thenReturn(Optional.of(user));
+        when(userRepository.findByEmail(unknownEmail)).thenReturn(Optional.empty());
+
+        UnauthorizedException wrongPasswordException = catchThrowableOfType(
+                () -> authService.login(knownEmail, "wrongpassword"), UnauthorizedException.class);
+        UnauthorizedException unknownEmailException = catchThrowableOfType(
+                () -> authService.login(unknownEmail, correctPassword), UnauthorizedException.class);
+
+        assertThat(wrongPasswordException.getStatus()).isEqualTo(unknownEmailException.getStatus());
+        assertThat(wrongPasswordException.getCode()).isEqualTo(unknownEmailException.getCode());
+        assertThat(wrongPasswordException.getMessage()).isEqualTo(unknownEmailException.getMessage());
+        assertThat(wrongPasswordException.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(wrongPasswordException.getCode()).isEqualTo("UNAUTHORIZED");
+    }
+
+    /** 이메일이 없을 때도 더미 해시로 bcrypt 비교를 수행해 findByEmail 호출은 항상 일어나야 한다. */
+    @Test
+    void login_없는_이메일도_findByEmail_은_호출된다() {
+        String unknownEmail = "unknown@example.com";
+        when(userRepository.findByEmail(unknownEmail)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> authService.login(unknownEmail, "any-password"))
+                .isInstanceOf(UnauthorizedException.class);
+
+        verify(userRepository).findByEmail(unknownEmail);
     }
 
     @Test
@@ -218,8 +277,21 @@ class AuthServiceTest {
         when(tokenProvider.verifyRefreshToken(refreshToken)).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> authService.refreshAccessToken(refreshToken))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Invalid or expired refresh token");
+                .isInstanceOf(UnauthorizedException.class)
+                .hasMessage("유효하지 않거나 만료된 리프레시 토큰입니다.");
+    }
+
+    /** 명세 §1.3 — 위조된 리프레시 토큰은 401 UNAUTHORIZED 여야 한다. */
+    @Test
+    void refreshAccessToken_invalidToken_은_401_UNAUTHORIZED_이다() {
+        String refreshToken = "invalid_token";
+        when(tokenProvider.verifyRefreshToken(refreshToken)).thenReturn(Optional.empty());
+
+        UnauthorizedException thrown = catchThrowableOfType(
+                () -> authService.refreshAccessToken(refreshToken), UnauthorizedException.class);
+
+        assertThat(thrown.getStatus()).isEqualTo(HttpStatus.UNAUTHORIZED);
+        assertThat(thrown.getCode()).isEqualTo("UNAUTHORIZED");
     }
 
     @Test
