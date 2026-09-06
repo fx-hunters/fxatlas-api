@@ -30,7 +30,8 @@ class StubEndpointsTest {
     private final GoalController goal = new GoalController();
     private final PlanController plan = new PlanController();
     // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
-    private final SystemController system = new SystemController();
+    // safe-mode 는 실구현되어 이 스텁 목록에서 제외 — SystemControllerTest 가 매핑을 검증한다.
+    private final SystemController system = new SystemController(null);
     private final AiController ai = new AiController();
 
     @TestFactory
@@ -71,7 +72,6 @@ class StubEndpointsTest {
                 () -> plan.skipStep("id", 1),
                 // System
                 system::getHomeSummary,
-                system::getSafeMode,
                 system::listNotifications,
                 // AI
                 () -> ai.parseGoal(null),
