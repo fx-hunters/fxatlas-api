@@ -256,7 +256,7 @@ public class FitService {
 
     // DTO 클래스들
     public record ConcentrationDiagnosis(
-            double exposure,
+            Map<String, Double> exposure,
             String topCurrency,
             double topShare,
             double threshold,
