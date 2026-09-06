@@ -42,6 +42,34 @@ class MockAiProviderTest {
     }
 
     @Test
+    void explain_detailed_프로필이고_metrics가_비어_있으면_수치_문장을_생략한다() {
+        AiProvider.ExplainResult result = provider.explain("detailed", Map.of());
+
+        assertThat(result.narrative()).isNotBlank();
+        // 엔진 수치가 없으면 AI 가 수치를 지어내지 않고 서술만 남긴다 (NFR-AI-01).
+        assertThat(result.narrative()).doesNotContain("총 자산은");
+        assertThat(result.narrative()).doesNotContain("위험 점수는");
+        assertThat(result.narrative()).contains("포트폴리오");
+    }
+
+    @Test
+    void explain_detailed_프로필이고_risk_score만_있으면_자산_문장을_생략한다() {
+        AiProvider.ExplainResult result = provider.explain("detailed", Map.of("risk_score", 5.5));
+
+        assertThat(result.narrative()).doesNotContain("총 자산은");
+        assertThat(result.narrative()).contains("위험 점수는 5.5");
+    }
+
+    @Test
+    void explain_detailed_프로필이고_total_amount만_있으면_위험_문장을_생략한다() {
+        AiProvider.ExplainResult result =
+                provider.explain("detailed", Map.of("total_amount", 100000.0));
+
+        assertThat(result.narrative()).contains("총 자산은 100000.0");
+        assertThat(result.narrative()).doesNotContain("위험 점수는");
+    }
+
+    @Test
     void explain_profile이_null이면_NullPointerException을_던진다() {
         assertThatThrownBy(() -> provider.explain(null, Map.of("amount", 100.0)))
                 .isInstanceOf(NullPointerException.class);

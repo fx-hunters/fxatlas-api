@@ -123,6 +123,46 @@ class AiResponseValidatorTest {
     }
 
     @Test
+    void validateNarrative_기대값이_0인데_서술에_0이_없으면_false() {
+        String narrative = "총액은 5000입니다.";
+        Map<String, Object> metrics = Map.of("loss", 0.0);
+
+        boolean result = validator.validateNarrative(narrative, metrics);
+
+        assertThat(result).isFalse();
+    }
+
+    @Test
+    void validateNarrative_수치가_아닌_metrics만_있으면_대조할_대상이_없어_true() {
+        String narrative = "통화는 USD 이며 별도의 수치는 없습니다.";
+        Map<String, Object> metrics = Map.of("currency_code", "USD");
+
+        // Number 가 아닌 값은 대조 대상에서 제외되므로 검증할 수치가 하나도 없다.
+        boolean result = validator.validateNarrative(narrative, metrics);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void validateNarrative_metrics가_비어_있으면_true() {
+        boolean result = validator.validateNarrative("대조할 수치가 없습니다.", Map.of());
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
+    void validateNarrative_숫자로_파싱되지_않는_토큰은_건너뛴다() {
+        // "1.2.3" 은 Double.parseDouble 에서 NumberFormatException 이 나며,
+        // 그 뒤의 100 을 계속 탐색해 일치를 찾아야 한다.
+        String narrative = "버전 1.2.3 기준 자산은 100입니다.";
+        Map<String, Object> metrics = Map.of("amount", 100.0);
+
+        boolean result = validator.validateNarrative(narrative, metrics);
+
+        assertThat(result).isTrue();
+    }
+
+    @Test
     void validateNarrative_쉼표가_있는_숫자() {
         String narrative = "자산은 1,000,000입니다.";
         Map<String, Object> metrics = Map.of("amount", 1000000.0);
