@@ -111,4 +111,42 @@ class NotificationSettingsServiceTest {
         assertThatThrownBy(() -> service.updateNotifications(userId, true, true, true, true))
                 .isInstanceOf(NotFoundException.class);
     }
+
+    @Test
+    void testUpdateNotifications_NewUserWithPartialNulls() {
+        User user = User.create("test@example.com", "테스트사용자", false);
+        UserSettings created = UserSettings.create(user, null, 0.0, "simple", "plain");
+        created.updateNotifications(true, false, true, true);
+
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userSettingsRepository.save(Mockito.any())).thenReturn(created);
+
+        // null 필드는 기본값 true로 설정됨
+        NotificationSettingsView updated = service.updateNotifications(userId, null, false, null, true);
+
+        assertThat(updated.exchangeScheduleReminder()).isTrue();
+        assertThat(updated.reviewRequiredAlert()).isFalse();
+        assertThat(updated.deadlineApproachAlert()).isTrue();
+        assertThat(updated.bucketEntryAlert()).isTrue();
+    }
+
+    @Test
+    void testUpdateNotifications_NewUserAllNull() {
+        User user = User.create("test@example.com", "테스트사용자", false);
+        UserSettings created = UserSettings.create(user, null, 0.0, "simple", "plain");
+        created.updateNotifications(true, true, true, true);
+
+        when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
+        when(userRepository.findById(userId)).thenReturn(Optional.of(user));
+        when(userSettingsRepository.save(Mockito.any())).thenReturn(created);
+
+        // 모든 필드가 null이면 모두 기본값 true로 설정됨
+        NotificationSettingsView updated = service.updateNotifications(userId, null, null, null, null);
+
+        assertThat(updated.exchangeScheduleReminder()).isTrue();
+        assertThat(updated.reviewRequiredAlert()).isTrue();
+        assertThat(updated.deadlineApproachAlert()).isTrue();
+        assertThat(updated.bucketEntryAlert()).isTrue();
+    }
 }

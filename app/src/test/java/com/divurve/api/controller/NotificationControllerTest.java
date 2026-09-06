@@ -46,4 +46,21 @@ class NotificationControllerTest {
         assertThatThrownBy(() -> controller().getNotifications())
                 .isInstanceOf(UnauthorizedException.class);
     }
+
+    @Test
+    void getNotifications_은_응답을_ApiResponse로_래핑한다() {
+        authenticate();
+
+        ApiResponse<NotificationsResponse> response = controller().getNotifications();
+
+        assertThat(response.data()).isNotNull();
+        assertThat(response.meta()).isNotNull();
+    }
+
+    @Test
+    void getNotifications_은_현재_사용자를_확인한다() {
+        // 인증 없이 호출하면 예외 발생
+        assertThatThrownBy(() -> controller().getNotifications())
+                .isInstanceOf(UnauthorizedException.class);
+    }
 }

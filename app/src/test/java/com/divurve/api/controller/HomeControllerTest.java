@@ -77,4 +77,46 @@ class HomeControllerTest {
         assertThatThrownBy(() -> controller().getSummary())
                 .isInstanceOf(UnauthorizedException.class);
     }
+
+    @Test
+    void getSummary_은_올바른_필드를_매핑한다() {
+        authenticate();
+        Instant now = Instant.now();
+        when(homeSummaryService.getSummary(userId)).thenReturn(
+                new HomeSummaryView(
+                        new TodayAction("50,000 USD"),
+                        new CurrencyStatus(5),
+                        new Notice("재검토 필요"),
+                        new WeeklyChange("상승 추세"),
+                        new MarketSummary("변동성 높음"),
+                        now));
+
+        ApiResponse<HomeSummaryResponse> response = controller().getSummary();
+
+        HomeSummaryResponse data = response.data();
+        assertThat(data.todayAction().heroAmount()).isEqualTo("50,000 USD");
+        assertThat(data.currencyStatus().totalAssets()).isEqualTo(5);
+        assertThat(data.notice().message()).isEqualTo("재검토 필요");
+        assertThat(data.weeklyChange().summary()).isEqualTo("상승 추세");
+        assertThat(data.marketSummary().summary()).isEqualTo("변동성 높음");
+    }
+
+    @Test
+    void getSummary_은_응답을_ApiResponse로_래핑한다() {
+        authenticate();
+        Instant now = Instant.now();
+        when(homeSummaryService.getSummary(userId)).thenReturn(
+                new HomeSummaryView(
+                        new TodayAction("0 KRW"),
+                        new CurrencyStatus(0),
+                        new Notice(""),
+                        new WeeklyChange(""),
+                        new MarketSummary(""),
+                        now));
+
+        ApiResponse<HomeSummaryResponse> response = controller().getSummary();
+
+        assertThat(response.data()).isNotNull();
+        assertThat(response.meta()).isNotNull();
+    }
 }
