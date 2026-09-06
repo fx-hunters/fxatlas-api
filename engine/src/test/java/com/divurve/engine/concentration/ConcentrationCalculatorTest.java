@@ -10,8 +10,6 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import java.util.HashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
-import org.junit.jupiter.api.Test;
-
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -187,6 +185,9 @@ class ConcentrationCalculatorTest {
         assertThat(report.before()).hasSize(1);
         assertThat(report.after()).isEmpty();
         assertThat(report.verdict()).isEqualTo("improves");
+    }
+
+    @Test
     @DisplayName("집중도 진단: 안전 상태 (주력 통화 < 임계값)")
     void testDiagnose_Safe() {
         Map<String, Long> assets = new HashMap<>();

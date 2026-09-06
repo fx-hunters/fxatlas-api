@@ -1,5 +1,6 @@
 package com.divurve.domain.ai;
 
+import com.divurve.common.architecture.UseCase;
 import java.util.Map;
 
 /**
@@ -7,6 +8,7 @@ import java.util.Map;
  * 불일치 시 응답을 폐기하고 재생성을 권고한다.
  * AI 는 산술을 하지 않으므로, 엔진 결과가 유일한 진실의 근원이다.
  */
+@UseCase
 public class AiResponseValidator {
 
     private static final double TOLERANCE = 0.01; // 1% 허용 오차

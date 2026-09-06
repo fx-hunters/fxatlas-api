@@ -1,29 +1,25 @@
 package com.divurve.engine.concentration;
 
 import com.divurve.engine.EngineComponent;
-import java.util.HashMap;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
 import java.util.Collections;
-import java.util.Comparator;
+import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 
 /**
- * 계획 완료 후 통화 노출·외화 비중 변화 시뮬레이션 (FR-RT-16/17).
+ * 통화 집중도 계산기. 이슈 #14(X-Ray/Fit)와 #18(계획 미리보기)이 각각 필요로 한 두 계열의 계산을 담는다.
  *
- * 계산 대상:
- * - 통화별 외화액 비중
- * - 각 외화 내 집중도 (Herfindahl Index)
+ * <p>진단 계열 (이슈 #14, FR-XR-03, FR-FT-01) — {@link #diagnose}, {@link #getSortedExposure}:
+ * 포트폴리오의 통화별 노출을 분석해 주력 통화 비중을 추출하고 임계값과 비교한다.
+ * 초과 시 {@code warning}, 이하면 {@code safe}.
  *
- * 판정 기준:
- * - worsens: 집중도 증가
- * - improves: 집중도 감소
- * - neutral: 변화 미미 (임계값 내)
- * 집중도 진단 계산기 (이슈 #14, FR-XR-03, FR-FT-01).
- * 포트폴리오의 통화별 노출을 분석하여 주력 통화 비중과 임계값을 비교한다.
- * 로직: 통화별 비중을 계산하고, 최대 비중(주력 통화)을 추출하여 임계값과 비교.
+ * <p>변화 보고 계열 (FR-RT-16/17) — {@link #calculateConcentration},
+ * {@link #verdictConcentrationChange}, {@link #report}:
+ * 계획 완료 전후의 통화 노출 변화를 시뮬레이션한다. 집중도는 Herfindahl Index 로 계산하고,
+ * 변화는 {@code worsens}(증가) / {@code improves}(감소) / {@code neutral}(임계값 내 미미)로 판정한다.
  */
 @EngineComponent
 public class ConcentrationCalculator {
@@ -124,6 +120,9 @@ public class ConcentrationCalculator {
             Map<String, Double> after,
             double threshold,
             String verdict
+    ) {
+    }
+
     private static final int PRECISION_SCALE = 4;
     private static final double EPSILON = 1e-10;
 
