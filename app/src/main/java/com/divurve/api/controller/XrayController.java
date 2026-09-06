@@ -1,5 +1,6 @@
 package com.divurve.api.controller;
 
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.xray.AttributionResponse;
 import com.divurve.api.dto.xray.StressRequest;
 import com.divurve.api.dto.xray.StressResponse;
@@ -25,6 +26,10 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * X-ray 진단 엔드포인트 (이슈 #14, 명세 3.3/3.4/3.5).
  * 사용자의 포트폴리오 분석: 통화 노출, 손익 분해, 스트레스 테스트.
+ *
+ * <p>대상 사용자는 {@link CurrentUser} 로 주입받는다. 이슈 #50 이전에는
+ * {@code @RequestParam UUID userId} 로 받아, <b>아무나 남의 user_id 를 쿼리 파라미터에 넣어
+ * 포트폴리오를 조회할 수 있었다</b>(NFR-SE-03 위반).
  */
 @WebAdapter
 @RestController
@@ -40,7 +45,7 @@ public class XrayController {
 
     @Operation(summary = "통화 노출·외화 비중·민감도")
     @GetMapping
-    public ApiResponse<XrayResponse> getXray(@RequestParam UUID userId) {
+    public ApiResponse<XrayResponse> getXray(@CurrentUser UUID userId) {
 
         XrayService.PortfolioSnapshot snapshot = xrayService.getPortfolio(userId);
 
@@ -93,7 +98,7 @@ public class XrayController {
     @Operation(summary = "손익 분해")
     @GetMapping("/attribution")
     public ApiResponse<AttributionResponse> getAttribution(
-            @RequestParam UUID userId,
+            @CurrentUser UUID userId,
             @RequestParam(required = false) String currencyCode,
             @RequestParam(required = false) String mode) {
 
@@ -144,7 +149,7 @@ public class XrayController {
     @Operation(summary = "스트레스 시나리오 적용")
     @PostMapping("/stress")
     public ApiResponse<StressResponse> applyStress(
-            @RequestParam UUID userId,
+            @CurrentUser UUID userId,
             @RequestBody StressRequest request) {
 
         XrayService.StressAnalysis analysis = xrayService.applyStress(userId, request.shocks());

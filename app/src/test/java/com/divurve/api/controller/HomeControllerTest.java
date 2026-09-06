@@ -1,12 +1,9 @@
 package com.divurve.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.when;
 
-import com.divurve.api.config.auth.CurrentUserContext;
 import com.divurve.api.dto.home.HomeSummaryResponse;
-import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.home.HomeSummaryService;
 import com.divurve.domain.home.HomeSummaryService.HomeSummaryView;
@@ -15,10 +12,8 @@ import com.divurve.domain.home.HomeSummaryService.CurrencyStatus;
 import com.divurve.domain.home.HomeSummaryService.Notice;
 import com.divurve.domain.home.HomeSummaryService.WeeklyChange;
 import com.divurve.domain.home.HomeSummaryService.MarketSummary;
-import com.divurve.domain.port.AuthPrincipal;
 import java.time.Instant;
 import java.util.UUID;
-import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
@@ -26,6 +21,8 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 /**
  * {@link HomeController} 매핑 검증.
+ *
+ * <p>미인증 401 은 {@code CurrentUserArgumentResolverTest} 가 한 벌로 검증한다 (이슈 #50).
  */
 @ExtendWith(MockitoExtension.class)
 class HomeControllerTest {
@@ -39,18 +36,8 @@ class HomeControllerTest {
         return new HomeController(homeSummaryService);
     }
 
-    private void authenticate() {
-        CurrentUserContext.set(new AuthPrincipal(userId, false));
-    }
-
-    @AfterEach
-    void tearDown() {
-        CurrentUserContext.clear();
-    }
-
     @Test
     void getSummary_은_홈요약을_래핑한다() {
-        authenticate();
         Instant now = Instant.now();
         when(homeSummaryService.getSummary(userId)).thenReturn(
                 new HomeSummaryView(
@@ -61,7 +48,7 @@ class HomeControllerTest {
                         new MarketSummary("안정적"),
                         now));
 
-        ApiResponse<HomeSummaryResponse> response = controller().getSummary();
+        ApiResponse<HomeSummaryResponse> response = controller().getSummary(userId);
 
         HomeSummaryResponse data = response.data();
         assertThat(data.todayAction().heroAmount()).isEqualTo("100,000 KRW");
@@ -73,14 +60,7 @@ class HomeControllerTest {
     }
 
     @Test
-    void 인증_컨텍스트가_없으면_401() {
-        assertThatThrownBy(() -> controller().getSummary())
-                .isInstanceOf(UnauthorizedException.class);
-    }
-
-    @Test
     void getSummary_은_올바른_필드를_매핑한다() {
-        authenticate();
         Instant now = Instant.now();
         when(homeSummaryService.getSummary(userId)).thenReturn(
                 new HomeSummaryView(
@@ -91,7 +71,7 @@ class HomeControllerTest {
                         new MarketSummary("변동성 높음"),
                         now));
 
-        ApiResponse<HomeSummaryResponse> response = controller().getSummary();
+        ApiResponse<HomeSummaryResponse> response = controller().getSummary(userId);
 
         HomeSummaryResponse data = response.data();
         assertThat(data.todayAction().heroAmount()).isEqualTo("50,000 USD");
@@ -103,7 +83,6 @@ class HomeControllerTest {
 
     @Test
     void getSummary_은_응답을_ApiResponse로_래핑한다() {
-        authenticate();
         Instant now = Instant.now();
         when(homeSummaryService.getSummary(userId)).thenReturn(
                 new HomeSummaryView(
@@ -114,7 +93,7 @@ class HomeControllerTest {
                         new MarketSummary(""),
                         now));
 
-        ApiResponse<HomeSummaryResponse> response = controller().getSummary();
+        ApiResponse<HomeSummaryResponse> response = controller().getSummary(userId);
 
         assertThat(response.data()).isNotNull();
         assertThat(response.meta()).isNotNull();

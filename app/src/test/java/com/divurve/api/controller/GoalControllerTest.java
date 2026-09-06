@@ -38,7 +38,7 @@ class GoalControllerTest {
     @BeforeEach
     void setUp() {
         goalController = new GoalController(goalService);
-        currentUserId = UUID.fromString("550e8400-e29b-41d4-a716-446655440000");
+        currentUserId = UUID.randomUUID();
         owner = User.createDemo("test@example.com", "Test User");
     }
 
@@ -60,7 +60,7 @@ class GoalControllerTest {
         when(goalService.getHeldAmountByCurrency(currentUserId, "USD")).thenReturn(5000.0);
         when(goalService.getHeldAmountByCurrency(currentUserId, "EUR")).thenReturn(2000.0);
 
-        ApiResponse<GoalListResponse> response = goalController.listGoals();
+        ApiResponse<GoalListResponse> response = goalController.listGoals(currentUserId);
 
         assertThat(response.data()).isNotNull();
         assertThat(response.data().goals()).hasSize(2);
@@ -71,7 +71,7 @@ class GoalControllerTest {
     void listGoalsEmpty() {
         when(goalService.listByOwner(currentUserId)).thenReturn(List.of());
 
-        ApiResponse<GoalListResponse> response = goalController.listGoals();
+        ApiResponse<GoalListResponse> response = goalController.listGoals(currentUserId);
 
         assertThat(response.data()).isNotNull();
         assertThat(response.data().goals()).isEmpty();
@@ -118,7 +118,7 @@ class GoalControllerTest {
                 false)).thenReturn(createdGoal);
         when(goalService.getHeldAmountByCurrency(currentUserId, "USD")).thenReturn(0.0);
 
-        ApiResponse<GoalResponse> response = goalController.createGoal(request);
+        ApiResponse<GoalResponse> response = goalController.createGoal(currentUserId, request);
 
         assertThat(response.data()).isNotNull();
         assertThat(response.data().name()).isEqualTo("USD 목표");
@@ -139,7 +139,7 @@ class GoalControllerTest {
         when(goalService.getByIdAndOwner(currentUserId, goalId)).thenReturn(goal);
         when(goalService.getHeldAmountByCurrency(currentUserId, "USD")).thenReturn(5000.0);
 
-        ApiResponse<GoalResponse> response = goalController.getGoal(goalId.toString());
+        ApiResponse<GoalResponse> response = goalController.getGoal(currentUserId, goalId.toString());
 
         assertThat(response.data()).isNotNull();
         assertThat(response.data().name()).isEqualTo("USD 목표");
@@ -180,6 +180,7 @@ class GoalControllerTest {
         when(goalService.getHeldAmountByCurrency(currentUserId, "USD")).thenReturn(5000.0);
 
         ApiResponse<GoalResponse> response = goalController.updateGoal(
+                currentUserId,
                 goalId.toString(),
                 request);
 
@@ -195,7 +196,7 @@ class GoalControllerTest {
 
         doNothing().when(goalService).delete(currentUserId, goalId);
 
-        ApiResponse<Void> response = goalController.deleteGoal(goalId.toString());
+        ApiResponse<Void> response = goalController.deleteGoal(currentUserId, goalId.toString());
 
         assertThat(response).isNotNull();
     }

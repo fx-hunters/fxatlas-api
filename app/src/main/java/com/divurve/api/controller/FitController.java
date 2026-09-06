@@ -1,5 +1,6 @@
 package com.divurve.api.controller;
 
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.fit.ConcentrationResponse;
 import com.divurve.api.dto.fit.SimulateRequest;
 import com.divurve.api.dto.fit.SimulateResponse;
@@ -18,12 +19,15 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 /**
  * Fit(적합성) 엔드포인트 (이슈 #14, 명세 3.8).
  * 포트폴리오 집중도 진단과 분산효과 시뮬레이션.
+ *
+ * <p>대상 사용자는 {@link CurrentUser} 로 주입받는다. 이슈 #50 이전에는
+ * {@code @RequestParam UUID userId} 로 받아, <b>아무나 남의 user_id 를 쿼리 파라미터에 넣어
+ * 집중도 진단을 조회할 수 있었다</b>(NFR-SE-03 위반).
  */
 @WebAdapter
 @RestController
@@ -39,7 +43,7 @@ public class FitController {
 
     @Operation(summary = "집중도 진단")
     @GetMapping("/concentration")
-    public ApiResponse<ConcentrationResponse> getConcentration(@RequestParam UUID userId) {
+    public ApiResponse<ConcentrationResponse> getConcentration(@CurrentUser UUID userId) {
 
         FitService.ConcentrationDiagnosis diagnosis = fitService.diagnoseConcentration(userId);
 
@@ -58,7 +62,7 @@ public class FitController {
     @Operation(summary = "분산효과 시뮬레이션")
     @PostMapping("/simulate")
     public ApiResponse<SimulateResponse> simulate(
-            @RequestParam UUID userId,
+            @CurrentUser UUID userId,
             @RequestBody SimulateRequest request) {
 
         FitService.DiversificationSimulation simulation = fitService.simulateDiversification(

@@ -1,20 +1,28 @@
 package com.divurve;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.divurve.support.PostgresTestContainer;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.divurve.engine.bucket.BucketAllocator;
 import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.safemode.SafeModeEvaluator;
 import com.divurve.engine.simulate.MonteCarloSimulator;
 import com.divurve.engine.split.SplitVarianceReducer;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.DynamicPropertyRegistry;
 import org.springframework.test.context.DynamicPropertySource;
+import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
 
 /**
@@ -39,6 +47,7 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
  * 하나로 유지한다. 프로퍼티 오버라이드나 {@code @MockBean} 을 여기에 추가하지 말 것.
  */
 @SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.MOCK)
+@AutoConfigureMockMvc
 @ActiveProfiles("test")
 class ApplicationContextSmokeTest {
 
@@ -52,6 +61,9 @@ class ApplicationContextSmokeTest {
 
     @Autowired
     private RequestMappingHandlerMapping handlerMapping;
+
+    @Autowired
+    private MockMvc mockMvc;
 
     @Test
     void 전체_컨텍스트가_기동된다() {
@@ -79,5 +91,37 @@ class ApplicationContextSmokeTest {
     @Test
     void 컨트롤러_매핑이_중복_없이_등록된다() {
         assertThat(handlerMapping.getHandlerMethods()).isNotEmpty();
+    }
+
+    /**
+     * OpenAPI 문서가 {@code userId} 를 요청 파라미터로 광고하지 않는지 확인한다 (이슈 #50).
+     *
+     * <p>{@code @CurrentUser} 는 커스텀 리졸버가 채우는 파라미터라, springdoc 에 알려주지 않으면
+     * 모든 보호 엔드포인트에 {@code userId} 쿼리 파라미터가 있는 것처럼 문서가 만들어진다 —
+     * 이슈 #50 에서 제거한 취약한 형태를 문서가 프론트에 다시 권하게 된다.
+     * {@code OpenApiConfig} 가 그 어노테이션을 문서 생성에서 제외한다.
+     */
+    @Test
+    void OpenAPI_문서가_userId_를_요청_파라미터로_노출하지_않는다() throws Exception {
+        String apiDocs = mockMvc.perform(get("/v3/api-docs"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+
+        JsonNode paths = new ObjectMapper().readTree(apiDocs).path("paths");
+        assertThat(paths).isNotEmpty();
+
+        List<String> 노출된_userId_파라미터 = new ArrayList<>();
+        paths.fields().forEachRemaining(path -> path.getValue().fields().forEachRemaining(operation -> {
+            for (JsonNode parameter : operation.getValue().path("parameters")) {
+                if ("userId".equals(parameter.path("name").asText())
+                        || "user_id".equals(parameter.path("name").asText())) {
+                    노출된_userId_파라미터.add(path.getKey() + " " + operation.getKey());
+                }
+            }
+        }));
+
+        assertThat(노출된_userId_파라미터).isEmpty();
     }
 }

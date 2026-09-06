@@ -1,19 +1,17 @@
 package com.divurve.api.controller;
 
-import com.divurve.api.config.auth.CurrentUserContext;
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.asset.DepositCreateRequest;
 import com.divurve.api.dto.asset.DepositResponse;
 import com.divurve.api.dto.asset.HoldingCreateRequest;
 import com.divurve.api.dto.asset.HoldingResponse;
 import com.divurve.api.dto.asset.HoldingUpdateRequest;
 import com.divurve.common.architecture.WebAdapter;
-import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.holding.DepositService;
 import com.divurve.domain.holding.HoldingService;
 import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
-import com.divurve.domain.port.AuthPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
@@ -29,7 +27,7 @@ import org.springframework.web.bind.annotation.RestController;
 
 /**
  * 자산(보유 종목·외화 예금) 엔드포인트 (이슈 #13, FR-XR-10, FR-ON-04).
- * 요청 주체는 {@link CurrentUserContext} 로 해석해 소유자 격리(NFR-SE-03)를 강제한다.
+ * 요청 주체는 {@link CurrentUser} 로 해석해 소유자 격리(NFR-SE-03)를 강제한다.
  */
 @WebAdapter
 @RestController
@@ -47,8 +45,8 @@ public class AssetController {
 
     @Operation(summary = "보유 종목 목록")
     @GetMapping("/holdings")
-    public ApiResponse<List<HoldingResponse>> listHoldings() {
-        List<HoldingResponse> data = holdingService.list(currentUserId()).stream()
+    public ApiResponse<List<HoldingResponse>> listHoldings(@CurrentUser UUID userId) {
+        List<HoldingResponse> data = holdingService.list(userId).stream()
                 .map(AssetController::toHoldingResponse)
                 .toList();
         return ApiResponse.of(data);
@@ -56,9 +54,11 @@ public class AssetController {
 
     @Operation(summary = "종목 추가", description = "매입일을 넘기면 서버가 매입 시점 환율을 자동 조회한다(FR-ON-04).")
     @PostMapping("/holdings")
-    public ApiResponse<HoldingResponse> createHolding(@RequestBody HoldingCreateRequest request) {
+    public ApiResponse<HoldingResponse> createHolding(
+            @CurrentUser UUID userId,
+            @RequestBody HoldingCreateRequest request) {
         Holding created = holdingService.create(
-                currentUserId(),
+                userId,
                 request.ticker(),
                 request.currencyCode(),
                 request.quantity(),
@@ -71,24 +71,27 @@ public class AssetController {
     @Operation(summary = "종목 수정", description = "수량·평균단가만 수정할 수 있다. 매입 환율 근거는 유지된다.")
     @PutMapping("/holdings/{id}")
     public ApiResponse<HoldingResponse> updateHolding(
+            @CurrentUser UUID userId,
             @PathVariable String id,
             @RequestBody HoldingUpdateRequest request) {
         Holding updated = holdingService.update(
-                currentUserId(), UUID.fromString(id), request.quantity(), request.avgPrice());
+                userId, UUID.fromString(id), request.quantity(), request.avgPrice());
         return ApiResponse.of(toHoldingResponse(updated));
     }
 
     @Operation(summary = "종목 삭제")
     @DeleteMapping("/holdings/{id}")
-    public ApiResponse<Void> deleteHolding(@PathVariable String id) {
-        holdingService.delete(currentUserId(), UUID.fromString(id));
+    public ApiResponse<Void> deleteHolding(
+            @CurrentUser UUID userId,
+            @PathVariable String id) {
+        holdingService.delete(userId, UUID.fromString(id));
         return ApiResponse.of(null);
     }
 
     @Operation(summary = "외화 예금 목록")
     @GetMapping("/deposits")
-    public ApiResponse<List<DepositResponse>> listDeposits() {
-        List<DepositResponse> data = depositService.list(currentUserId()).stream()
+    public ApiResponse<List<DepositResponse>> listDeposits(@CurrentUser UUID userId) {
+        List<DepositResponse> data = depositService.list(userId).stream()
                 .map(AssetController::toDepositResponse)
                 .toList();
         return ApiResponse.of(data);
@@ -96,21 +99,16 @@ public class AssetController {
 
     @Operation(summary = "외화 예금 추가", description = "매입일을 넘기면 서버가 예치 시점 환율을 자동 조회한다(FR-ON-04).")
     @PostMapping("/deposits")
-    public ApiResponse<DepositResponse> createDeposit(@RequestBody DepositCreateRequest request) {
+    public ApiResponse<DepositResponse> createDeposit(
+            @CurrentUser UUID userId,
+            @RequestBody DepositCreateRequest request) {
         Deposit created = depositService.create(
-                currentUserId(),
+                userId,
                 request.currencyCode(),
                 request.amount(),
                 request.purchasedAt(),
                 request.purchaseFxRateKrw());
         return ApiResponse.of(toDepositResponse(created));
-    }
-
-    /** 현재 요청 주체의 사용자 id. 인증 컨텍스트가 없으면 401. */
-    private UUID currentUserId() {
-        return CurrentUserContext.get()
-                .map(AuthPrincipal::userId)
-                .orElseThrow(UnauthorizedException::new);
     }
 
     private static HoldingResponse toHoldingResponse(Holding h) {

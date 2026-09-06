@@ -2,6 +2,7 @@ package com.divurve.api.controller;
 
 import static java.util.Objects.requireNonNull;
 
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.plan.ActivePlanResponse;
 import com.divurve.api.dto.plan.PlanCreateRequest;
 import com.divurve.api.dto.plan.PlanPreviewRequest;
@@ -14,8 +15,9 @@ import com.divurve.api.dto.plan.StepCompleteRequest;
 import com.divurve.api.dto.plan.StepCompleteResponse;
 import com.divurve.api.dto.plan.StepSkipResponse;
 import com.divurve.common.architecture.WebAdapter;
+import com.divurve.common.exception.NotFoundException;
 import com.divurve.common.response.ApiResponse;
-import com.divurve.domain.goal.GoalRepository;
+import com.divurve.domain.plan.PlanAccessService;
 import com.divurve.domain.plan.PlanConfirmService;
 import com.divurve.domain.plan.PlanPreviewService;
 import com.divurve.domain.plan.PlanRepository;
@@ -39,6 +41,10 @@ import org.springframework.web.bind.annotation.RestController;
  * 계획 엔드포인트 (명세 2·3.1·3.7장).
  * 계획 미리보기, 확정, 이력 조회, 활성 계획 조회, 회차 완료/건너뛰기를 담당한다.
  * 경로가 /plans 와 /goals/{id}/plans 를 넘나들어 base 는 /api/v1 로 둔다.
+ *
+ * <p>모든 엔드포인트가 {@link PlanAccessService} 로 소유자를 먼저 검증한다 (이슈 #50).
+ * 그 이전에는 <b>소유자 검증이 전혀 없어</b> {@code goalId}/{@code planId} 만 알면
+ * 남의 계획을 읽고 회차를 완료·건너뛸 수 있었다.
  */
 @WebAdapter
 @RestController
@@ -46,7 +52,7 @@ import org.springframework.web.bind.annotation.RestController;
 @Tag(name = "Plan", description = "계획 미리보기·확정·회차 실행")
 public class PlanController {
 
-    private final GoalRepository goalRepository;
+    private final PlanAccessService planAccessService;
     private final PlanRepository planRepository;
     private final PlanStepRepository planStepRepository;
     private final PlanConfirmService planConfirmService;
@@ -55,14 +61,14 @@ public class PlanController {
     private final PlanPreviewResponseMapper planPreviewResponseMapper;
 
     public PlanController(
-            GoalRepository goalRepository,
+            PlanAccessService planAccessService,
             PlanRepository planRepository,
             PlanStepRepository planStepRepository,
             PlanConfirmService planConfirmService,
             PlanStepExecutionService planStepExecutionService,
             PlanPreviewService planPreviewService,
             PlanPreviewResponseMapper planPreviewResponseMapper) {
-        this.goalRepository = requireNonNull(goalRepository, "goalRepository");
+        this.planAccessService = requireNonNull(planAccessService, "planAccessService");
         this.planRepository = requireNonNull(planRepository, "planRepository");
         this.planStepRepository = requireNonNull(planStepRepository, "planStepRepository");
         this.planConfirmService = requireNonNull(planConfirmService, "planConfirmService");
@@ -73,7 +79,11 @@ public class PlanController {
 
     @Operation(summary = "계획 미리보기 (저장하지 않는다)")
     @PostMapping("/plans/preview")
-    public ApiResponse<PlanPreviewResponse> preview(@RequestBody PlanPreviewRequest request) {
+    public ApiResponse<PlanPreviewResponse> preview(
+            @CurrentUser UUID userId,
+            @RequestBody PlanPreviewRequest request) {
+        planAccessService.requireGoalOwner(userId, UUID.fromString(request.goalId()));
+
         var previewInfo = planPreviewService.generatePreview(
                 request.goalId(),
                 request.weeklyBudgetKrw(),
@@ -87,9 +97,11 @@ public class PlanController {
     @Operation(summary = "계획 확정·저장")
     @PostMapping("/goals/{id}/plans")
     public ApiResponse<PlanResponse> createPlan(
+            @CurrentUser UUID userId,
             @PathVariable String id,
             @RequestBody PlanCreateRequest request) {
         UUID goalId = UUID.fromString(id);
+        planAccessService.requireGoalOwner(userId, goalId);
 
         Plan savedPlan = planConfirmService.confirmAndSavePlan(
                 goalId,
@@ -107,8 +119,11 @@ public class PlanController {
 
     @Operation(summary = "계획 버전 이력")
     @GetMapping("/goals/{id}/plans")
-    public ApiResponse<PlanVersionListResponse> listPlanVersions(@PathVariable String id) {
+    public ApiResponse<PlanVersionListResponse> listPlanVersions(
+            @CurrentUser UUID userId,
+            @PathVariable String id) {
         UUID goalId = UUID.fromString(id);
+        planAccessService.requireGoalOwner(userId, goalId);
 
         List<Plan> plans = planRepository.findByGoal_Id(goalId);
         List<PlanVersionListResponse.Version> versions = plans.stream()
@@ -120,11 +135,14 @@ public class PlanController {
 
     @Operation(summary = "활성 계획과 회차")
     @GetMapping("/goals/{id}/plans/active")
-    public ApiResponse<ActivePlanResponse> getActivePlan(@PathVariable String id) {
+    public ApiResponse<ActivePlanResponse> getActivePlan(
+            @CurrentUser UUID userId,
+            @PathVariable String id) {
         UUID goalId = UUID.fromString(id);
+        planAccessService.requireGoalOwner(userId, goalId);
 
         Plan activePlan = planRepository.findByGoal_IdAndIsActiveTrue(goalId)
-                .orElseThrow(() -> new IllegalArgumentException("Active plan not found for goal: " + goalId));
+                .orElseThrow(() -> new NotFoundException("활성 계획을 찾을 수 없습니다."));
 
         List<PlanStep> steps = planStepRepository.findByPlan_IdOrderBySeqAsc(activePlan.getId());
         ActivePlanResponse response = PlanResponseMapper.toActivePlanResponse(activePlan, steps);
@@ -135,10 +153,12 @@ public class PlanController {
     @Operation(summary = "회차 완료 기록")
     @PostMapping("/plans/{id}/steps/{seq}/complete")
     public ApiResponse<StepCompleteResponse> completeStep(
+            @CurrentUser UUID userId,
             @PathVariable String id,
             @PathVariable int seq,
             @RequestBody StepCompleteRequest request) {
         UUID planId = UUID.fromString(id);
+        planAccessService.requirePlanOwner(userId, planId);
 
         PlanStep completedStep = planStepExecutionService.completeStep(
                 planId,
@@ -158,12 +178,13 @@ public class PlanController {
     @Operation(summary = "회차 건너뛰기")
     @PostMapping("/plans/{id}/steps/{seq}/skip")
     public ApiResponse<StepSkipResponse> skipStep(
+            @CurrentUser UUID userId,
             @PathVariable String id,
             @PathVariable int seq) {
         UUID planId = UUID.fromString(id);
 
-        Plan plan = planRepository.findById(planId)
-                .orElseThrow(() -> new IllegalArgumentException("Plan not found: " + planId));
+        // 소유자 검증이 계획 조회를 겸한다 — 같은 계획을 두 번 읽지 않는다.
+        Plan plan = planAccessService.requirePlanOwner(userId, planId);
         double targetAmount = plan.getGoal().getTargetAmount();
 
         PlanStepExecutionService.SkipResult skipResult =

@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.divurve.api.dto.plan.ActivePlanResponse;
@@ -16,9 +17,10 @@ import com.divurve.api.dto.plan.PlanVersionListResponse;
 import com.divurve.api.dto.plan.StepCompleteRequest;
 import com.divurve.api.dto.plan.StepCompleteResponse;
 import com.divurve.api.dto.plan.StepSkipResponse;
+import com.divurve.common.exception.NotFoundException;
 import com.divurve.common.response.ApiResponse;
-import com.divurve.domain.goal.GoalRepository;
 import com.divurve.domain.goal.entity.Goal;
+import com.divurve.domain.plan.PlanAccessService;
 import com.divurve.domain.plan.PlanConfirmService;
 import com.divurve.domain.plan.PlanPreviewService.PlanPreviewInfo;
 import com.divurve.domain.plan.PlanPreviewService;
@@ -39,12 +41,13 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link PlanController} — 도메인 결과 → DTO 변환, data/meta 래핑, 미구현·미존재 예외 검증.
+ * {@link PlanController} — 도메인 결과 → DTO 변환, data/meta 래핑, 미존재 예외,
+ * 그리고 소유자 격리 (이슈 #50) 검증.
  */
 @DisplayName("PlanController")
 class PlanControllerTest {
 
-    private GoalRepository goalRepository;
+    private PlanAccessService planAccessService;
     private PlanRepository planRepository;
     private PlanStepRepository planStepRepository;
     private PlanConfirmService planConfirmService;
@@ -53,6 +56,7 @@ class PlanControllerTest {
     private PlanPreviewResponseMapper planPreviewResponseMapper;
     private PlanController controller;
 
+    private UUID userId;
     private UUID goalId;
     private UUID planId;
     private Goal goal;
@@ -60,7 +64,7 @@ class PlanControllerTest {
 
     @BeforeEach
     void setUp() {
-        goalRepository = mock(GoalRepository.class);
+        planAccessService = mock(PlanAccessService.class);
         planRepository = mock(PlanRepository.class);
         planStepRepository = mock(PlanStepRepository.class);
         planConfirmService = mock(PlanConfirmService.class);
@@ -68,10 +72,11 @@ class PlanControllerTest {
         planPreviewService = mock(PlanPreviewService.class);
         planPreviewResponseMapper = mock(PlanPreviewResponseMapper.class);
         controller = new PlanController(
-                goalRepository, planRepository, planStepRepository,
+                planAccessService, planRepository, planStepRepository,
                 planConfirmService, planStepExecutionService,
                 planPreviewService, planPreviewResponseMapper);
 
+        userId = UUID.randomUUID();
         goalId = UUID.randomUUID();
         planId = UUID.randomUUID();
 
@@ -111,7 +116,7 @@ class PlanControllerTest {
         when(planPreviewService.generatePreview(goalId.toString(), 100000L, 0.8, 4)).thenReturn(info);
         when(planPreviewResponseMapper.toResponse(info)).thenReturn(mapped);
 
-        ApiResponse<PlanPreviewResponse> response = controller.preview(request);
+        ApiResponse<PlanPreviewResponse> response = controller.preview(userId, request);
 
         verify(planPreviewService).generatePreview(goalId.toString(), 100000L, 0.8, 4);
         verify(planPreviewResponseMapper).toResponse(info);
@@ -127,7 +132,7 @@ class PlanControllerTest {
                 .thenReturn(plan);
         when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId)).thenReturn(steps());
 
-        ApiResponse<PlanResponse> response = controller.createPlan(goalId.toString(), request);
+        ApiResponse<PlanResponse> response = controller.createPlan(userId, goalId.toString(), request);
 
         assertThat(response.meta()).isNotNull();
         assertThat(response.data().id()).isEqualTo(planId.toString());
@@ -145,7 +150,7 @@ class PlanControllerTest {
         when(planRepository.findByGoal_Id(goalId)).thenReturn(List.of(plan));
 
         ApiResponse<PlanVersionListResponse> response =
-                controller.listPlanVersions(goalId.toString());
+                controller.listPlanVersions(userId, goalId.toString());
 
         assertThat(response.meta()).isNotNull();
         assertThat(response.data().versions()).singleElement().satisfies(v -> {
@@ -163,22 +168,23 @@ class PlanControllerTest {
         when(planRepository.findByGoal_IdAndIsActiveTrue(goalId)).thenReturn(Optional.of(plan));
         when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId)).thenReturn(steps());
 
-        ApiResponse<ActivePlanResponse> response = controller.getActivePlan(goalId.toString());
+        ApiResponse<ActivePlanResponse> response = controller.getActivePlan(userId, goalId.toString());
 
         assertThat(response.meta()).isNotNull();
         assertThat(response.data().id()).isEqualTo(planId.toString());
         assertThat(response.data().steps()).hasSize(2);
     }
 
+    /** 이슈 #50 이전에는 IllegalArgumentException 이라 500 이 나갔다 — 자원 부재는 404 다. */
     @Test
-    @DisplayName("getActivePlan 은 활성 계획이 없으면 예외를 던진다")
+    @DisplayName("getActivePlan 은 활성 계획이 없으면 404 를 던진다")
     void getActivePlanThrowsWhenMissing() {
         when(planRepository.findByGoal_IdAndIsActiveTrue(goalId)).thenReturn(Optional.empty());
 
         String id = goalId.toString();
-        assertThatThrownBy(() -> controller.getActivePlan(id))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Active plan not found");
+        assertThatThrownBy(() -> controller.getActivePlan(userId, id))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("활성 계획을 찾을 수 없습니다");
     }
 
     @Test
@@ -190,7 +196,7 @@ class PlanControllerTest {
         when(planStepExecutionService.completeStep(planId, 1, 2500.0)).thenReturn(completed);
 
         ApiResponse<StepCompleteResponse> response =
-                controller.completeStep(planId.toString(), 1, request);
+                controller.completeStep(userId, planId.toString(), 1, request);
 
         assertThat(response.meta()).isNotNull();
         assertThat(response.data().seq()).isEqualTo(1);
@@ -203,11 +209,11 @@ class PlanControllerTest {
     @Test
     @DisplayName("skipStep 은 재분배 결과를 반환한다")
     void skipStepReturnsRedistribution() {
-        when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
+        when(planAccessService.requirePlanOwner(userId, planId)).thenReturn(plan);
         when(planStepExecutionService.skipStep(planId, 2, 10000.0))
                 .thenReturn(new SkipResult(2, 2500.0, 3750.0, 50.0, false, 7500.0, 2));
 
-        ApiResponse<StepSkipResponse> response = controller.skipStep(planId.toString(), 2);
+        ApiResponse<StepSkipResponse> response = controller.skipStep(userId, planId.toString(), 2);
 
         assertThat(response.meta()).isNotNull();
         assertThat(response.data().redistributed().perStepBefore()).isEqualTo(2500.0);
@@ -221,13 +227,80 @@ class PlanControllerTest {
     }
 
     @Test
-    @DisplayName("skipStep 은 계획이 없으면 예외를 던진다")
+    @DisplayName("skipStep 은 계획이 없거나 남의 계획이면 404 를 던지고 실행 서비스를 부르지 않는다")
     void skipStepThrowsWhenPlanMissing() {
-        when(planRepository.findById(planId)).thenReturn(Optional.empty());
+        when(planAccessService.requirePlanOwner(userId, planId))
+                .thenThrow(new NotFoundException("계획을 찾을 수 없습니다."));
 
         String id = planId.toString();
-        assertThatThrownBy(() -> controller.skipStep(id, 1))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("Plan not found");
+        assertThatThrownBy(() -> controller.skipStep(userId, id, 1))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessageContaining("계획을 찾을 수 없습니다");
+        verifyNoInteractions(planStepExecutionService);
+    }
+
+    // ── 소유자 격리 (이슈 #50) ──────────────────────────────────────────
+    // 이전에는 소유자 검증이 전혀 없어 goalId/planId 만 알면 남의 계획을 읽고 조작할 수 있었다.
+
+    @Test
+    @DisplayName("preview 는 남의 목표면 404 를 던지고 미리보기 계산을 하지 않는다")
+    void previewRejectsForeignGoal() {
+        when(planAccessService.requireGoalOwner(userId, goalId))
+                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
+        PlanPreviewRequest request = new PlanPreviewRequest(goalId.toString(), 100000L, 0.8, 4);
+
+        assertThatThrownBy(() -> controller.preview(userId, request))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(planPreviewService, planPreviewResponseMapper);
+    }
+
+    @Test
+    @DisplayName("createPlan 은 남의 목표면 404 를 던지고 계획을 저장하지 않는다")
+    void createPlanRejectsForeignGoal() {
+        when(planAccessService.requireGoalOwner(userId, goalId))
+                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
+        String id = goalId.toString();
+        PlanCreateRequest request = new PlanCreateRequest(100000L, 0.8, 4);
+
+        assertThatThrownBy(() -> controller.createPlan(userId, id, request))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(planConfirmService);
+    }
+
+    @Test
+    @DisplayName("listPlanVersions 는 남의 목표면 404 를 던지고 이력을 읽지 않는다")
+    void listPlanVersionsRejectsForeignGoal() {
+        when(planAccessService.requireGoalOwner(userId, goalId))
+                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
+        String id = goalId.toString();
+
+        assertThatThrownBy(() -> controller.listPlanVersions(userId, id))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(planRepository);
+    }
+
+    @Test
+    @DisplayName("getActivePlan 은 남의 목표면 404 를 던지고 활성 계획을 읽지 않는다")
+    void getActivePlanRejectsForeignGoal() {
+        when(planAccessService.requireGoalOwner(userId, goalId))
+                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
+        String id = goalId.toString();
+
+        assertThatThrownBy(() -> controller.getActivePlan(userId, id))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(planRepository);
+    }
+
+    @Test
+    @DisplayName("completeStep 은 남의 계획이면 404 를 던지고 회차를 완료하지 않는다")
+    void completeStepRejectsForeignPlan() {
+        when(planAccessService.requirePlanOwner(userId, planId))
+                .thenThrow(new NotFoundException("계획을 찾을 수 없습니다."));
+        String id = planId.toString();
+        StepCompleteRequest request = new StepCompleteRequest(2500.0, 1350.0);
+
+        assertThatThrownBy(() -> controller.completeStep(userId, id, 1, request))
+                .isInstanceOf(NotFoundException.class);
+        verifyNoInteractions(planStepExecutionService);
     }
 }

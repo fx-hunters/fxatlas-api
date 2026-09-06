@@ -1,6 +1,6 @@
 package com.divurve.api.controller;
 
-import com.divurve.api.config.auth.CurrentUserContext;
+import com.divurve.api.config.auth.CurrentUser;
 import com.divurve.api.dto.home.HomeSummaryResponse;
 import com.divurve.api.dto.home.HomeSummaryResponse.CurrencyStatusDto;
 import com.divurve.api.dto.home.HomeSummaryResponse.MarketSummaryDto;
@@ -8,11 +8,9 @@ import com.divurve.api.dto.home.HomeSummaryResponse.NoticeDto;
 import com.divurve.api.dto.home.HomeSummaryResponse.TodayActionDto;
 import com.divurve.api.dto.home.HomeSummaryResponse.WeeklyChangeDto;
 import com.divurve.common.architecture.WebAdapter;
-import com.divurve.common.exception.UnauthorizedException;
 import com.divurve.common.response.ApiResponse;
 import com.divurve.domain.home.HomeSummaryService;
 import com.divurve.domain.home.HomeSummaryService.HomeSummaryView;
-import com.divurve.domain.port.AuthPrincipal;
 import io.swagger.v3.oas.annotations.Operation;
 import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.UUID;
@@ -38,16 +36,9 @@ public class HomeController {
 
     @Operation(summary = "홈 요약 조회")
     @GetMapping("/summary")
-    public ApiResponse<HomeSummaryResponse> getSummary() {
-        HomeSummaryView summary = homeSummaryService.getSummary(currentUserId());
+    public ApiResponse<HomeSummaryResponse> getSummary(@CurrentUser UUID userId) {
+        HomeSummaryView summary = homeSummaryService.getSummary(userId);
         return ApiResponse.of(toHomeSummaryResponse(summary));
-    }
-
-    /** 현재 요청 주체의 사용자 id. 인증 컨텍스트가 없으면 401. */
-    private UUID currentUserId() {
-        return CurrentUserContext.get()
-                .map(AuthPrincipal::userId)
-                .orElseThrow(UnauthorizedException::new);
     }
 
     private HomeSummaryResponse toHomeSummaryResponse(HomeSummaryView view) {
