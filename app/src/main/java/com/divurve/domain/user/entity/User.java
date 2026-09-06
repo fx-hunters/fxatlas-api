@@ -95,4 +95,9 @@ public class User {
     public Instant getCreatedAt() {
         return createdAt;
     }
+
+    /** 사용자 이름을 수정한다. */
+    public void updateName(String name) {
+        this.name = name;
+    }
 }

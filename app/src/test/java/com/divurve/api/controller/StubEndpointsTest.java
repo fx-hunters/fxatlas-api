@@ -17,6 +17,12 @@ import org.junit.jupiter.api.TestFactory;
  * 각 메서드 호출로 본문의 {@code throw} 라인과 예외 생성자가 실행되어 커버된다.
  */
 class StubEndpointsTest {
+
+    // signup/login/refresh 스텁은 authDemoService 를 건드리지 않으므로 null 로 충분하다.
+    // demo() 는 실구현되어 이 스텁 목록에서 제외되고, 매핑은 AuthControllerTest 가 검증한다.
+    private final AuthController auth = new AuthController(null);
+    // getProfile/updateProfile/updateNotifications 과 risk-profile/settings 는 모두 실구현되어
+    // 스텁 목록에서 제외 — MeControllerTest 가 모든 매핑을 검증한다.
     // risk-profile/settings 는 실구현되어 이 스텁 목록에서 제외 — MeControllerTest 가 매핑을 검증한다.
     // 남은 스텁(getProfile/updateProfile/updateNotifications)은 서비스를 건드리지 않으므로 null 로 충분하다.
     private final MeController me = new MeController(null, null);
@@ -42,6 +48,11 @@ class StubEndpointsTest {
     @TestFactory
     List<DynamicTest> 모든_스텁_엔드포인트는_501_NotImplemented_를_던진다() {
         List<ThrowingCallable> calls = List.of(
+                // Auth
+                () -> auth.signup(null),
+                () -> auth.login(null),
+                () -> auth.refresh(null),
+                // MyPage — 모두 실구현됨, MeControllerTest 참고
                 // Auth: signup/login/refresh/demo 는 이슈 #22에서 실구현됨. AuthControllerTest 참고.
                 // MyPage
                 me::getProfile,
