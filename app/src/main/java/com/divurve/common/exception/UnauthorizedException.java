@@ -11,7 +11,17 @@ import org.springframework.http.HttpStatus;
  */
 public class UnauthorizedException extends ApiException {
 
+    private static final String CODE = "UNAUTHORIZED";
+
     public UnauthorizedException() {
-        super(HttpStatus.UNAUTHORIZED, "UNAUTHORIZED", "인증이 필요합니다.", null);
+        super(HttpStatus.UNAUTHORIZED, CODE, "인증이 필요합니다.", null);
+    }
+
+    /**
+     * @param message 사람이 읽는 메시지. 로그인 실패처럼 "없는 계정"과 "틀린 비밀번호"를 구분해 주면
+     *                안 되는 상황에서는 <b>양쪽에 완전히 같은 문자열</b>을 넘겨야 한다(사용자 열거 방지).
+     */
+    public UnauthorizedException(String message) {
+        super(HttpStatus.UNAUTHORIZED, CODE, message, null);
     }
 }
