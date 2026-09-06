@@ -3,10 +3,14 @@ package com.divurve.domain.plan;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
+import static org.mockito.Mockito.lenient;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import com.divurve.common.exception.ForbiddenException;
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.goal.GoalRepository;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.PlanPreviewService.PlanPreviewInfo;
@@ -16,10 +20,12 @@ import com.divurve.engine.concentration.ConcentrationCalculator;
 import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.simulate.MonteCarloSimulator;
 import com.divurve.engine.split.SplitVarianceReducer;
+import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 import org.assertj.core.data.Offset;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
@@ -42,8 +48,14 @@ class PlanPreviewServiceTest {
     /** 월 예산 1,000,000 KRW 이 되도록 하는 주간 예산 (서비스는 weekly × 4 로 근사한다). */
     private static final long WEEKLY_BUDGET_KRW = 250_000L;
 
+    /** 테스트 전반의 기본 통화(USD)에 쓰는 1단위당 환율. 실제 시세와 무관한 임의값이다. */
+    private static final BigDecimal USD_PER_UNIT_RATE_KRW = new BigDecimal("1300");
+
     @Mock
     private GoalRepository goalRepository;
+
+    @Mock
+    private PerUnitFxRates perUnitFxRates;
 
     private final BucketAllocator bucketAllocator = new BucketAllocator();
     private final SplitVarianceReducer splitVarianceReducer = new SplitVarianceReducer();
@@ -53,14 +65,25 @@ class PlanPreviewServiceTest {
 
     private final UUID goalId = UUID.randomUUID();
 
+    @BeforeEach
+    void setUpDefaultFxRate() {
+        // 기본 통화(USD)의 환율은 대부분의 테스트에서 쓰이므로 관대하게(lenient) 등록한다 —
+        // KRW 목표·환율 실패를 다루는 테스트는 이 스텁을 쓰지 않는다.
+        lenient().when(perUnitFxRates.require("USD")).thenReturn(USD_PER_UNIT_RATE_KRW);
+    }
+
     private PlanPreviewService service() {
         return new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator);
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates);
     }
 
     private Goal.Builder goalBuilder(String purpose) {
+        return goalBuilder(purpose, "USD");
+    }
+
+    private Goal.Builder goalBuilder(String purpose, String currencyCode) {
         return Goal.builder(User.create("me@divurve.com", "나", null), "미국 ETF 적립", "RECURRING",
-                        purpose, "USD")
+                        purpose, currencyCode)
                 .targetAmount(10_000_000)
                 .targetDate(LocalDate.now().plusDays(365))
                 .budgetAmount(1_000_000)
@@ -257,6 +280,71 @@ class PlanPreviewServiceTest {
         assertThat(info.metrics().achieveProb()).isZero();
     }
 
+    // ------------------------------------------------------------- 통화 환산 (이슈 #82)
+
+    @Test
+    void 목표_통화가_KRW_이면_환율_조회_없이_원화_금액을_그대로_비교한다() {
+        // 원화 목표에서까지 PerUnitFxRates 를 부르면 KRW_KRW 통화쌍을 물어 실패한다.
+        givenGoal(goalBuilder("TRAVEL", "KRW").recurInterval("MONTHLY").targetAmount(1.0).build());
+
+        PlanPreviewInfo info = service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, 4);
+
+        assertThat(info.metrics().achieveProb()).isEqualTo(1.0);
+        verifyNoInteractions(perUnitFxRates);
+    }
+
+    @Test
+    void 외화_목표는_1단위당_환율로_원화_환산한_뒤_비교한다() {
+        // USD 10 은 원화로도 사소하지만, 원/100엔 같은 오류 없이 환율이 적용됐는지는
+        // require 호출 자체(통화코드)로 검증한다 — 곱셈 결과 자체는 아래 극단값 테스트가 증명한다.
+        givenGoal(goalBuilder("TRAVEL", "USD").recurInterval("MONTHLY").targetAmount(10.0).build());
+
+        PlanPreviewInfo info = service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, 4);
+
+        assertThat(info.metrics().achieveProb()).isEqualTo(1.0);
+        verify(perUnitFxRates).require("USD");
+    }
+
+    @Test
+    void 원화_환산_없이_비교했다면_불가능했을_거액도_환산_후에는_사소하면_달성확률_1_이다() {
+        // 수정 전 버그를 재현하는 크기다 — 원화 값과 직접 비교하면 항상 0(도달 불가)이었을
+        // 큰 raw 숫자(1.0e15)를, 환율을 아주 작게(1e-12) 주면 원화 환산 후에는 1,000원으로
+        // 줄어든다. 그런데도 확률이 1.0 이 나온다는 것은 이 값이 "환산 후" 원화로 비교됐다는
+        // 뜻이다 — 환산이 빠졌다면(수정 전 코드) 이 조합은 0.0 이 나왔을 것이다.
+        when(perUnitFxRates.require("JPY")).thenReturn(new BigDecimal("0.000000000001"));
+        givenGoal(goalBuilder("TRAVEL", "JPY").recurInterval("MONTHLY").targetAmount(1.0e15).build());
+
+        PlanPreviewInfo info = service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, 4);
+
+        assertThat(info.metrics().achieveProb()).isEqualTo(1.0);
+    }
+
+    @Test
+    void 원화_환산_없이_비교했다면_가능했을_소액도_환산_후에는_거액이면_달성확률_0_이다() {
+        // 반대 방향 증명 — raw 숫자는 사소한 1.0 이지만, 환율을 아주 크게(1e18) 주면 원화
+        // 환산 후에는 도달 불가능한 규모가 된다. 환산이 적용되지 않았다면(수정 전 코드) 1.0 이
+        // 나왔을 조합에서 0.0 이 나온다는 것은 목표금액이 원화로 환산돼 비교된다는 뜻이다.
+        when(perUnitFxRates.require("EUR")).thenReturn(new BigDecimal("1000000000000000000"));
+        givenGoal(goalBuilder("TRAVEL", "EUR").recurInterval("MONTHLY").targetAmount(1.0).build());
+
+        PlanPreviewInfo info = service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, 4);
+
+        assertThat(info.metrics().achieveProb()).isZero();
+    }
+
+    @Test
+    void 환율_조회가_실패하면_예외가_그대로_전파된다() {
+        // require 는 조회 실패를 삼키지 않는다 — 달성 확률이라는 결과값 전체가 이 환율
+        // 하나에 의존하므로, 값을 지어내는 대신 예외를 그대로 올려 잘못된 확률을 감춰서
+        // 내려주지 않는다(보유 자산 목록에서 통화 하나만 빼는 find 자리와 다르다).
+        when(perUnitFxRates.require("USD")).thenThrow(new IllegalStateException("환율 조회 결과가 없습니다: USD"));
+        givenGoal(goalBuilder("TRAVEL", "USD").recurInterval("MONTHLY").build());
+
+        assertThatThrownBy(() -> service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, 4))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("USD");
+    }
+
     // ------------------------------------------------------------------- 실패 경로
 
     @Test
@@ -317,34 +405,39 @@ class PlanPreviewServiceTest {
     @Test
     void 협력자가_null_이면_생성_시점에_실패한다() {
         assertThatThrownBy(() -> new PlanPreviewService(null, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator))
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("GoalRepository");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, null, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator))
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("BucketAllocator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, null,
-                costCalculator, monteCarloSimulator, concentrationCalculator))
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("SplitVarianceReducer");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                null, monteCarloSimulator, concentrationCalculator))
+                null, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("CostCalculator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, null, concentrationCalculator))
+                costCalculator, null, concentrationCalculator, perUnitFxRates))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("MonteCarloSimulator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, null))
+                costCalculator, monteCarloSimulator, null, perUnitFxRates))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("ConcentrationCalculator");
+
+        assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
+                costCalculator, monteCarloSimulator, concentrationCalculator, null))
+                .isInstanceOf(NullPointerException.class)
+                .hasMessageContaining("PerUnitFxRates");
     }
 
     // ------------------------------------------------------------ 응답 계약용 레코드
