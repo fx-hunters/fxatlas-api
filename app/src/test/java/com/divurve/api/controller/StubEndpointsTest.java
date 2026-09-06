@@ -33,6 +33,9 @@ class StubEndpointsTest {
     // goals 는 실구현되어 이 스텁 목록에서 제외 — GoalControllerTest 가 매핑을 검증한다.
     private final PlanController plan = new PlanController();
     // currencies/fx-terms 는 실구현되어 이 스텁 목록에서 제외 — MasterControllerTest 가 매핑을 검증한다.
+    // safe-mode 는 실구현되어 이 스텁 목록에서 제외 — SystemControllerTest 가 매핑을 검증한다.
+    private final SystemController system = new SystemController(null);
+    private final AiController ai = new AiController();
     private final SystemController system = new SystemController();
     // AI 는 실구현되어 이 스텁 목록에서 제외 — AiControllerTest 가 매핑을 검증한다.
 
@@ -65,6 +68,10 @@ class StubEndpointsTest {
                 // Plan 는 의존성 주입으로 인해 테스트에서 제외
                 // System
                 system::getHomeSummary,
+                system::listNotifications,
+                // AI
+                () -> ai.parseGoal(null),
+                () -> ai.explain(null));
                 system::getSafeMode,
                 system::listNotifications);
 
