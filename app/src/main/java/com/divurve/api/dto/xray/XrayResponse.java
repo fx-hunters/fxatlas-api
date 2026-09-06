@@ -1,5 +1,6 @@
 package com.divurve.api.dto.xray;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.List;
 import java.util.Map;
@@ -10,6 +11,9 @@ import java.util.Map;
  * <p>{@code krw_asset_krw} 가 v2 에서 추가됐다 — 외화 비중의 <b>분모</b>이며,
  * v1 에는 원화 자산 입력 경로가 없어 {@code fx_ratio} 가 항상 1.0 이었다.
  * v1 의 {@code upcoming_outflows}(항상 빈 배열)는 명세에 근거가 없어 삭제했다.
+ *
+ * <p>{@code sensitivity_1pct} 는 전역 SNAKE_CASE 전략이 숫자 앞에 밑줄을 넣지 않으므로
+ * {@link JsonProperty} 로 명세의 키를 그대로 고정한다(이슈 #60).
  */
 @Schema(description = "외화 비중·통화 노출·집중도·1퍼센트 민감도")
 public record XrayResponse(
@@ -32,7 +36,7 @@ public record XrayResponse(
         Concentration concentration,
 
         @Schema(description = "환율 1퍼센트 변동 시 원화 평가금액 변화")
-        Sensitivity sensitivity1pct,
+        @JsonProperty("sensitivity_1pct") Sensitivity sensitivity1pct,
 
         @Schema(description = "전일 대비 변화(원). 스냅샷이 없으면 null", example = "84000", nullable = true)
         Long dayChangeKrw) {

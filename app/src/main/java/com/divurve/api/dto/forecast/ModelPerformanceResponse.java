@@ -1,6 +1,7 @@
 package com.divurve.api.dto.forecast;
 
 import com.divurve.domain.forecast.ForecastService;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.time.Instant;
 
@@ -13,6 +14,9 @@ import java.time.Instant;
  *
  * <p>v1 대비: 하드코딩 목값 대신 실제 롤링 워크포워드 검증 결과이며,
  * {@code rw_improvement} · {@code evaluated_at} 이 신설됐다.
+ *
+ * <p>{@code coverage_80} 은 전역 SNAKE_CASE 전략이 숫자 앞에 밑줄을 넣지 않으므로
+ * {@link JsonProperty} 로 명세의 키를 그대로 고정한다(이슈 #60).
  */
 @Schema(description = "모델 성적표. 성적이 나빠도 그대로 노출한다.")
 public record ModelPerformanceResponse(
@@ -60,7 +64,7 @@ public record ModelPerformanceResponse(
     public record Model(
             @Schema(example = "0.54") double hitRate,
             @Schema(example = "0.019") double mae,
-            @Schema(example = "0.81") double coverage80,
+            @Schema(example = "0.81") @JsonProperty("coverage_80") double coverage80,
             @Schema(example = "0.058") double avgWidth) {
     }
 

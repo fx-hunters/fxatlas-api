@@ -75,6 +75,11 @@ app/                       나머지 전부. 레이어는 패키지로 나눈다
 - **DB 컬럼 = API 응답 필드**: `snake_case`, 그대로. 줄여 쓰지 않는다.
 - Java: 변수·메서드 `camelCase` / 클래스 `PascalCase` / 상수 `UPPER_SNAKE`.
 - DTO 는 `camelCase` 로 작성하고 **Jackson 전역 SNAKE_CASE 전략**으로 직렬화만 자동 변환.
+- **숫자 경계**: 전역 SNAKE_CASE 전략은 대문자 앞에만 `_` 를 넣고 숫자 앞에는 넣지 않는다
+  (`interval80` → `interval80`, `interval_80` 이 아니다). 필드명에 숫자가 붙으면(`[a-z][0-9]`)
+  `@JsonProperty` 로 명세의 키(`interval_80`)를 직접 고정한다. 명세에 없는 필드는 숫자 앞에 `_` 를
+  넣은 키로 스스로 정한다. `DtoSnakeCaseDigitBoundaryTest` 가 `api/dto` 전체를 직렬화해 이 규약을
+  강제한다(이슈 #60).
 - 접미사·헷갈리는 용어는 네이밍 규칙 통일 문서 참고.
 
 ## 6. API / Swagger

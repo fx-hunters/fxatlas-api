@@ -1,5 +1,6 @@
 package com.divurve.api.dto.fit;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
 import io.swagger.v3.oas.annotations.media.Schema;
 import java.util.Map;
 
@@ -10,6 +11,9 @@ import java.util.Map;
  * 어긋나 삭제했다. 대신 {@code assumption} 문자열과 <b>변화값만</b> 내려보내고, 클라이언트가
  * "이 선택을 추가하면 USD 집중도가 63.9%에서 55.7%로 낮아지는 가정입니다" 형태로만 표현한다.
  * 포트폴리오 변동성({@code portfolio_vol})도 임의 상수(σ 0.12/0.14/0.10, ρ 0.5)에서 나오던 값이라 뺐다.
+ *
+ * <p>{@code sensitivity_1pct} 는 전역 SNAKE_CASE 전략이 숫자 앞에 밑줄을 넣지 않으므로
+ * {@link JsonProperty} 로 명세의 키를 그대로 고정한다(이슈 #60).
  */
 @Schema(description = "비중 가정 전후의 집중도·민감도 변화")
 public record FitPreviewResponse(
@@ -24,7 +28,7 @@ public record FitPreviewResponse(
         Concentration concentration,
 
         @Schema(description = "환율 1퍼센트 민감도 가정 전후")
-        Sensitivity sensitivity1pct) {
+        @JsonProperty("sensitivity_1pct") Sensitivity sensitivity1pct) {
 
     /** 가정 전후의 통화별 비중. */
     @Schema(description = "통화별 비중 전후")
