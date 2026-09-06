@@ -72,10 +72,6 @@ public class DiversificationSimulator {
             Map<String, Double> currencyToShare,
             Map<String, Double> currencyToVolatility,
             Map<String, Double> correlations) {
-        if (currencyToShare.isEmpty()) {
-            return 0.0;
-        }
-
         double varianceSum = 0.0;
 
         // 개별 항: Σ w_i^2 σ_i^2

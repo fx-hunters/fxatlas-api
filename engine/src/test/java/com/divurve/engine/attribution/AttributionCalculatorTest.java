@@ -150,8 +150,44 @@ class AttributionCalculatorTest {
     @Test
     @DisplayName("귀속분해: 음수 종료 자산은 허용")
     void testDecompose_NegativeEndAsset() {
-        // 자산이 마이너스가 되는 것은 가능 (전부 팔면)
         assertThrows(IllegalArgumentException.class, () ->
                 calculator.decompose(1000.0, -100.0, new BigDecimal("1000"), new BigDecimal("1000"), 0.0, "three_way"));
+    }
+
+    @Test
+    @DisplayName("귀속분해: 종료 자산 0 — safeLog 분기 커버")
+    void testDecompose_ZeroEndAsset() {
+        AttributionCalculator.AttributionResult result = calculator.decompose(
+                1000.0,
+                0.0,
+                new BigDecimal("1000"),
+                new BigDecimal("1000"),
+                0.0,
+                "three_way"
+        );
+
+        assertNotNull(result);
+        assertEquals(0.0, result.totalReturn(), 0.0001, "safeLog(0)은 0 반환 — 전량 손실을 0으로 처리");
+    }
+
+    @Test
+    @DisplayName("귀속분해: null 종료 환율 예외")
+    void testDecompose_NullEndRate() {
+        assertThrows(NullPointerException.class, () ->
+                calculator.decompose(1000.0, 1000.0, new BigDecimal("1000"), null, 0.0, "three_way"));
+    }
+
+    @Test
+    @DisplayName("귀속분해: 음수 비용 비율 예외")
+    void testDecompose_NegativeCostRatio() {
+        assertThrows(IllegalArgumentException.class, () ->
+                calculator.decompose(1000.0, 1000.0, new BigDecimal("1000"), new BigDecimal("1000"), -0.01, "three_way"));
+    }
+
+    @Test
+    @DisplayName("귀속분해: 종료 환율 0 예외")
+    void testDecompose_ZeroEndRate() {
+        assertThrows(IllegalArgumentException.class, () ->
+                calculator.decompose(1000.0, 1000.0, new BigDecimal("1000"), new BigDecimal("0"), 0.0, "three_way"));
     }
 }

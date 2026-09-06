@@ -6,6 +6,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -207,6 +208,46 @@ class DiversificationSimulatorTest {
 
         assertThrows(NullPointerException.class, () ->
                 simulator.simulate(shares, volatility, correlation, null, 0.1));
+    }
+
+    @Test
+    @DisplayName("시뮬레이션: 빈 포트폴리오에서의 변동성은 0")
+    void testSimulate_EmptyPortfolioVolatility() {
+        Map<String, Double> shares = new HashMap<>();
+        shares.put("USD", 1.0);
+
+        Map<String, Double> volatility = new HashMap<>();
+
+        Map<String, Double> correlation = new HashMap<>();
+
+        DiversificationSimulator.SimulationResult result = simulator.simulate(
+                shares, volatility, correlation, "USD", -0.5
+        );
+
+        assertNotNull(result);
+        assertEquals(0.0, result.portfolioVolBefore(), 0.0001);
+    }
+
+    @Test
+    @DisplayName("시뮬레이션: 단일 통화 100% → 비중 감소 시 나머지 비중 0인 경우")
+    void testSimulate_SingleCurrencyDecreaseFromFull() {
+        Map<String, Double> shares = new LinkedHashMap<>();
+        shares.put("USD", 1.0);
+        shares.put("EUR", 0.0);
+
+        Map<String, Double> volatility = new HashMap<>();
+        volatility.put("USD", 0.12);
+        volatility.put("EUR", 0.14);
+
+        Map<String, Double> correlation = new HashMap<>();
+        correlation.put("USD_EUR", 0.5);
+
+        DiversificationSimulator.SimulationResult result = simulator.simulate(
+                shares, volatility, correlation, "USD", -0.3
+        );
+
+        assertNotNull(result);
+        assertEquals(0.7, result.adjustedShare().get("USD"), 0.0001);
     }
 
     @Test

@@ -186,6 +186,25 @@ class StressCalculatorTest {
     }
 
     @Test
+    @DisplayName("스트레스 계산: 자산 0일 때 영향비율 0")
+    void testApply_ZeroAsset() {
+        Map<String, Double> assets = new HashMap<>();
+        assets.put("USD", 0.0);
+
+        Map<String, BigDecimal> rates = new HashMap<>();
+        rates.put("USD", new BigDecimal("1000"));
+
+        Map<String, Double> shocks = new HashMap<>();
+        shocks.put("USD", 0.01);
+
+        StressCalculator.StressResult result = calculator.apply(assets, rates, shocks);
+
+        assertNotNull(result);
+        assertEquals(0L, result.totalAssetBeforeKrw());
+        assertEquals(0.0, result.portfolioImpactRatio(), 0.0001);
+    }
+
+    @Test
     @DisplayName("스트레스 계산: null 충격맵 예외")
     void testApply_NullShockMap() {
         Map<String, Double> assets = new HashMap<>();
