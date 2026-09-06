@@ -3,7 +3,6 @@ package com.divurve.domain.auth;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -41,11 +40,13 @@ class AuthServiceTest {
         UUID userId = UUID.randomUUID();
 
         when(userRepository.findByEmail(email)).thenReturn(Optional.empty());
+        // save() 가 돌려주는 것은 JPA 가 id 를 채운 엔티티다. 단위테스트에서는 리플렉션으로 주입한다.
         User savedUser = User.create(email, name, "hashed", purpose);
-        when(userRepository.save(any(User.class))).thenReturn(User.create(email, name, "hashed", purpose));
+        assignId(savedUser, userId);
+        when(userRepository.save(any(User.class))).thenReturn(savedUser);
 
         AuthTokens expectedTokens = new AuthTokens("access", "refresh", 1800);
-        when(tokenProvider.issue(any(UUID.class), eq(false))).thenReturn(expectedTokens);
+        when(tokenProvider.issue(userId, false)).thenReturn(expectedTokens);
 
         AuthTokens result = authService.signup(email, password, name, purpose);
 
@@ -53,7 +54,7 @@ class AuthServiceTest {
         assertThat(result.refreshToken()).isEqualTo("refresh");
         verify(userRepository).findByEmail(email);
         verify(userRepository).save(any(User.class));
-        verify(tokenProvider).issue(any(UUID.class), eq(false));
+        verify(tokenProvider).issue(userId, false);
     }
 
     @Test
@@ -211,5 +212,16 @@ class AuthServiceTest {
         assertThat(passwordHash).isNotEqualTo(password);
         assertThat(passwordHash).startsWith("$2");
         assertThat(encoder.matches(password, passwordHash)).isTrue();
+    }
+
+    /** 단위테스트에서 JPA 가 채우는 UUID 를 리플렉션으로 주입한다. */
+    private static void assignId(User user, UUID id) {
+        try {
+            var field = User.class.getDeclaredField("id");
+            field.setAccessible(true);
+            field.set(user, id);
+        } catch (ReflectiveOperationException e) {
+            throw new IllegalStateException(e);
+        }
     }
 }
