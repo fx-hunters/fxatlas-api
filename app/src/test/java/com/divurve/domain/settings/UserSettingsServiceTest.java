@@ -70,11 +70,11 @@ class UserSettingsServiceTest {
         when(userRepository.findById(userId)).thenReturn(Optional.of(user));
         when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        SettingsView view = service().updateSettings(userId, "004", 0.8, "simple");
+        SettingsView view = service().updateSettings(userId, "004", 0.8, "expert");
 
         assertThat(view.defaultBankCode()).isEqualTo("004");
         assertThat(view.fxDiscountRatio()).isEqualTo(0.8);
-        assertThat(view.displayMode()).isEqualTo("simple");
+        assertThat(view.displayMode()).isEqualTo("expert");
         assertThat(view.effectiveSpreadRatio()).isEqualTo(0.0035, within(1e-9));
         verify(userSettingsRepository).save(any(UserSettings.class));
     }
@@ -103,10 +103,10 @@ class UserSettingsServiceTest {
         when(userSettingsRepository.save(any(UserSettings.class))).thenAnswer(inv -> inv.getArgument(0));
 
         // 표시모드만 갱신, 우대율은 null → 기존 우대율(0.5) 유지
-        SettingsView view = service().updateSettings(userId, null, null, "detailed");
+        SettingsView view = service().updateSettings(userId, null, null, "expert");
 
         assertThat(view.fxDiscountRatio()).isEqualTo(0.5);
-        assertThat(view.displayMode()).isEqualTo("detailed");
+        assertThat(view.displayMode()).isEqualTo("expert");
         assertThat(view.defaultBankCode()).isEqualTo("081");
     }
 
@@ -129,7 +129,14 @@ class UserSettingsServiceTest {
     void updateSettings_은_우대율이_범위를_벗어나면_400() {
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().updateSettings(userId, "004", 1.5, "simple"))
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 1.5, "expert"))
+                .isInstanceOf(InvalidRequestException.class);
+        verify(userSettingsRepository, never()).save(any());
+    }
+
+    @Test
+    void updateSettings_은_표시모드가_허용값이_아니면_400() {
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "simple"))
                 .isInstanceOf(InvalidRequestException.class);
         verify(userSettingsRepository, never()).save(any());
     }
@@ -139,7 +146,7 @@ class UserSettingsServiceTest {
         when(userSettingsRepository.findByOwner_Id(userId)).thenReturn(Optional.empty());
         when(userRepository.findById(userId)).thenReturn(Optional.empty());
 
-        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "simple"))
+        assertThatThrownBy(() -> service().updateSettings(userId, "004", 0.5, "expert"))
                 .isInstanceOf(NotFoundException.class);
     }
 }

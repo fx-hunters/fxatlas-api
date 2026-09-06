@@ -7,6 +7,7 @@ import com.divurve.domain.settings.entity.UserSettings;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
 import com.divurve.engine.cost.EffectiveSpreadCalculator;
+import java.util.Set;
 import java.util.UUID;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -20,8 +21,14 @@ import org.springframework.transaction.annotation.Transactional;
 @UseCase
 public class UserSettingsService {
 
+    /** 표시 모드 — 초보자(설명 강함). */
+    public static final String DISPLAY_MODE_BEGINNER = "beginner";
+    /** 표시 모드 — 전문가(지표·한계까지). */
+    public static final String DISPLAY_MODE_EXPERT = "expert";
+    /** 허용하는 표시 모드 값(명세 ERD user_settings.display_mode). */
+    public static final Set<String> ALLOWED_DISPLAY_MODES = Set.of(DISPLAY_MODE_BEGINNER, DISPLAY_MODE_EXPERT);
     /** 표시 모드 기본값. */
-    public static final String DEFAULT_DISPLAY_MODE = "standard";
+    public static final String DEFAULT_DISPLAY_MODE = DISPLAY_MODE_BEGINNER;
     /** 환전 우대율 기본값. */
     public static final double DEFAULT_FX_DISCOUNT_RATIO = 0.0;
 
@@ -52,11 +59,17 @@ public class UserSettingsService {
      * 설정을 갱신하고 갱신된 값·실효 스프레드를 반환한다. {@code null} 필드는 기존값(없으면 기본값)을 유지한다.
      *
      * @throws NotFoundException       사용자를 찾을 수 없는 경우
-     * @throws InvalidRequestException 환전 우대율이 0.0~1.0 범위를 벗어난 경우
+     * @throws InvalidRequestException 환전 우대율이 0.0~1.0 범위를 벗어나거나 표시 모드가 허용값(beginner/expert)이 아닌 경우
      */
     @Transactional
     public SettingsView updateSettings(
             UUID userId, String defaultBankCode, Double fxDiscountRatio, String displayMode) {
+        // 표시 모드 검증 — 명세 허용값(beginner/expert) 밖 입력은 400. null(미변경)은 통과.
+        if (displayMode != null && !ALLOWED_DISPLAY_MODES.contains(displayMode)) {
+            throw new InvalidRequestException(
+                    "표시 모드는 " + ALLOWED_DISPLAY_MODES + " 중 하나여야 합니다 (입력 " + displayMode + ").");
+        }
+
         UserSettings existing = userSettingsRepository.findByOwner_Id(userId).orElse(null);
 
         String bankCode = defaultBankCode != null

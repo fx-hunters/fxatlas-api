@@ -13,7 +13,7 @@ public final class CurrencyMaster {
 
     // 표시 순서를 보존하기 위해 List 로 둔다 (KRW 는 자국 통화이므로 지원 외화 목록에서 제외).
     private static final List<Currency> CURRENCIES = List.of(
-            new Currency("USD", 2, 1, "base", "currency-usd"),
+            new Currency("USD", 2, 1, "self", "currency-usd"),
             new Currency("EUR", 2, 1, "quote", "currency-eur"),
             new Currency("JPY", 0, 100, "base", "currency-jpy"),
             new Currency("GBP", 2, 1, "quote", "currency-gbp"),
@@ -33,7 +33,7 @@ public final class CurrencyMaster {
      * @param currencyCode ISO 4217 통화 코드
      * @param minorUnits   소수 자릿수 (JPY=0, 대부분 2)
      * @param quoteUnit    호가 단위 (JPY 는 100 단위 호가)
-     * @param usdSide      USD 페어에서 USD 의 위치 (base/quote)
+     * @param usdSide      삼각환산 방향 — USD 자신은 {@code self}, USD 페어에서 USD 의 위치는 {@code base}/{@code quote}
      * @param colorToken   프론트 색상 디자인 토큰
      */
     public record Currency(
