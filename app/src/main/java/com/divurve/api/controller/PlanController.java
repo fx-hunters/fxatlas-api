@@ -6,6 +6,7 @@ import com.divurve.api.dto.plan.ActivePlanResponse;
 import com.divurve.api.dto.plan.PlanCreateRequest;
 import com.divurve.api.dto.plan.PlanPreviewRequest;
 import com.divurve.api.dto.plan.PlanPreviewResponse;
+import com.divurve.api.dto.plan.PlanPreviewResponseMapper;
 import com.divurve.api.dto.plan.PlanResponse;
 import com.divurve.api.dto.plan.PlanResponseMapper;
 import com.divurve.api.dto.plan.PlanVersionListResponse;
@@ -27,6 +28,10 @@ import io.swagger.v3.oas.annotations.tags.Tag;
 import java.util.List;
 import java.util.UUID;
 import java.util.stream.Collectors;
+import com.divurve.domain.plan.PlanPreviewService;
+import io.swagger.v3.oas.annotations.Operation;
+import io.swagger.v3.oas.annotations.tags.Tag;
+import java.util.Objects;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -38,6 +43,7 @@ import org.springframework.web.bind.annotation.RestController;
  * 계획 엔드포인트 (명세 2·3.1·3.7장).
  * 계획 확정, 이력 조회, 활성 계획 조회, 회차 완료/건너뛰기를 담당한다.
  * 경로가 /plans 와 /goals/{id}/plans 를 넘나들어 base 는 /api/v1 로 둔다.
+ * preview 엔드포인트는 구현됨, 나머지는 미구현.
  */
 @WebAdapter
 @RestController
@@ -67,7 +73,14 @@ public class PlanController {
     @Operation(summary = "계획 미리보기 (저장하지 않는다)")
     @PostMapping("/plans/preview")
     public ApiResponse<PlanPreviewResponse> preview(@RequestBody PlanPreviewRequest request) {
-        throw new NotImplementedException();
+        var previewInfo = planPreviewService.generatePreview(
+                request.goalId(),
+                request.weeklyBudgetKrw(),
+                request.safeRatio(),
+                request.splitCount()
+        );
+
+        return ApiResponse.of(planPreviewResponseMapper.toResponse(previewInfo));
     }
 
     @Operation(summary = "계획 확정·저장")

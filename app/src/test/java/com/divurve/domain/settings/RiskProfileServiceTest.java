@@ -37,7 +37,7 @@ class RiskProfileServiceTest {
     private UserRepository userRepository;
 
     private final UUID userId = UUID.randomUUID();
-    private final User user = User.create("me@divurve.com", "나", false);
+    private final User user = User.createDemo("me@divurve.com", "나");
 
     private RiskProfileService service() {
         return new RiskProfileService(riskProfileRepository, userRepository, new RiskProfileScorer());

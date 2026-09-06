@@ -15,7 +15,7 @@ class UserRepositoryTest extends RepositoryTestBase {
     @Test
     void 저장_시_id와_created_at을_DB가_채운다() {
         // saveAndFlush 로 INSERT 를 즉시 반영해야 @Generated(INSERT) 가 created_at 을 재조회한다.
-        User saved = userRepository.saveAndFlush(User.create("a@divurve.com", "앨리스", false));
+        User saved = userRepository.saveAndFlush(User.createDemo("a@divurve.com", "앨리스"));
 
         assertThat(saved.getId()).isNotNull();
         assertThat(saved.getCreatedAt()).isNotNull();
@@ -23,7 +23,7 @@ class UserRepositoryTest extends RepositoryTestBase {
 
     @Test
     void findByEmail_은_해당_이메일의_사용자를_반환한다() {
-        userRepository.save(User.create("b@divurve.com", "밥", true));
+        userRepository.save(User.createDemo("b@divurve.com", "밥"));
 
         assertThat(userRepository.findByEmail("b@divurve.com"))
             .isPresent()

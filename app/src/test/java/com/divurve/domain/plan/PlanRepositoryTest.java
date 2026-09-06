@@ -28,7 +28,7 @@ class PlanRepositoryTest extends RepositoryTestBase {
     private UserRepository userRepository;
 
     private Goal newGoal(String email) {
-        User owner = userRepository.save(User.create(email, "사용자", false));
+        User owner = userRepository.save(User.createDemo(email, "사용자"));
         return goalRepository.save(Goal.builder(owner, "목표", "onetime", "spend", "USD")
             .targetAmount(10000).budgetAmount(1_000_000).status("active").build());
     }
