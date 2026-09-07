@@ -49,7 +49,7 @@ class HomeControllerTest {
                         new BlockView(1, "today", "filled"),
                         new BlockView(2, "profile_fit", "filled"),
                         new BlockView(3, "fx_status", "filled"),
-                        new BlockView(4, "goals_route", "route_pending"),
+                        new BlockView(4, "goals_route", "empty"),
                         new BlockView(5, "attention", "filled"),
                         new BlockView(6, "forecast", "filled")),
                 new TodayView("vol_elevated_usd", "caution"),
