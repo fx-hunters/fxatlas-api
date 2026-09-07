@@ -55,7 +55,7 @@ class HomeControllerTest {
                 new TodayView("vol_elevated_usd", "caution"),
                 new ProfileFitView("balanced", "above_threshold"),
                 new FxStatusView(0.361, "USD", 247_200L, 84_000L),
-                new GoalsRouteView(List.of(), false, "route_pending"),
+                new GoalsRouteView(List.of(), "empty"),
                 new AttentionView("caution", List.of(
                         new EconomicEventView(LocalDate.now().plusDays(3), "FOMC", "USD", "high"))),
                 new ForecastSummaryView("USDKRW", 1382.40, new IntervalView(1346.0, 1431.0)),
@@ -78,7 +78,6 @@ class HomeControllerTest {
         assertThat(data.profileFit().grade()).isEqualTo("balanced");
         assertThat(data.fxStatus().fxRatio()).isEqualTo(0.361);
         assertThat(data.fxStatus().topCurrencyCode()).isEqualTo("USD");
-        assertThat(data.goalsRoute().routeEnabled()).isFalse();
         assertThat(data.attention().upcomingEvents()).hasSize(1);
         assertThat(data.forecast().pairCode()).isEqualTo("USDKRW");
         assertThat(data.forecast().interval80().lo()).isEqualTo(1346.0);
@@ -102,7 +101,7 @@ class HomeControllerTest {
                 new TodayView("regime_normal", "normal"),
                 new ProfileFitView(null, "unknown"),
                 new FxStatusView(0.0, null, 0L, null),
-                new GoalsRouteView(List.of(), false, "route_pending"),
+                new GoalsRouteView(List.of(), "empty"),
                 new AttentionView("normal", List.of()),
                 null,
                 "normal",
@@ -125,7 +124,7 @@ class HomeControllerTest {
                 new GoalsRouteView(
                         List.of(new ActiveGoalView(
                                 "goal-1", "여행자금", "USD", 1000.0, LocalDate.now().plusMonths(6), "active")),
-                        true, "filled"),
+                        "filled"),
                 new AttentionView("normal", List.of()),
                 new ForecastSummaryView("USDKRW", 1382.40, new IntervalView(1346.0, 1431.0)),
                 "normal",
@@ -134,7 +133,6 @@ class HomeControllerTest {
 
         ApiResponse<HomeSummaryResponse> response = controller().getSummary(userId);
 
-        assertThat(response.data().goalsRoute().routeEnabled()).isTrue();
         assertThat(response.data().goalsRoute().activeGoals()).hasSize(1);
         assertThat(response.data().goalsRoute().activeGoals().get(0).name()).isEqualTo("여행자금");
     }

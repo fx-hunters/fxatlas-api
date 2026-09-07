@@ -1,66 +1,99 @@
 package com.divurve.engine.planner;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link AcquisitionRange} — 정기형 확보 외화 범위 (플래너 명세 §10.2·§10.3).
+ * {@link AcquisitionRange} 테스트 — 확보 외화 범위와 누적 (명세 §10.2·§10.3).
  */
 @DisplayName("AcquisitionRange")
 class AcquisitionRangeTest {
 
-    private static final AcquisitionRange RANGE = new AcquisitionRange(
-            new BigDecimal("350.00"), new BigDecimal("370.00"), new BigDecimal("385.00"));
-
-    @Test
-    @DisplayName("하단·기준·상단을 그대로 담는다")
-    void constructor_KeepsValues() {
-        assertThat(RANGE.low()).isEqualByComparingTo("350.00");
-        assertThat(RANGE.base()).isEqualByComparingTo("370.00");
-        assertThat(RANGE.high()).isEqualByComparingTo("385.00");
+    private static BigDecimal bd(String value) {
+        return new BigDecimal(value);
     }
 
     @Test
-    @DisplayName("누적 범위는 회차 수를 곱한 값이다")
-    void accumulate_MultipliesByRoundCount() {
-        AcquisitionRange accumulated = RANGE.accumulate(6);
+    @DisplayName("low 는 환율 상단, high 는 환율 하단에서 나온다 — 비용과 방향이 반대다")
+    void lowComesFromHighRate() {
+        // 같은 예산이면 환율이 높을수록 확보 외화는 줄어든다.
+        AcquisitionRange range = new AcquisitionRange(bd("71.50"), bd("73.55"), bd("75.15"));
 
-        assertThat(accumulated.low()).isEqualByComparingTo("2100.00");
-        assertThat(accumulated.base()).isEqualByComparingTo("2220.00");
-        assertThat(accumulated.high()).isEqualByComparingTo("2310.00");
+        assertThat(range.low()).isLessThan(range.base());
+        assertThat(range.base()).isLessThan(range.high());
     }
 
     @Test
-    @DisplayName("회차가 0이면 누적도 0이다")
-    void accumulate_ZeroRounds_ReturnsZero() {
-        AcquisitionRange accumulated = RANGE.accumulate(0);
-
-        assertThat(accumulated.low()).isEqualByComparingTo("0");
-        assertThat(accumulated.base()).isEqualByComparingTo("0");
-        assertThat(accumulated.high()).isEqualByComparingTo("0");
+    @DisplayName("null 값은 각각 거부한다")
+    void rejectsNulls() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> new AcquisitionRange(null, bd("1"), bd("2")))
+                .withMessage("low");
+        assertThatNullPointerException()
+                .isThrownBy(() -> new AcquisitionRange(bd("1"), null, bd("2")))
+                .withMessage("base");
+        assertThatNullPointerException()
+                .isThrownBy(() -> new AcquisitionRange(bd("1"), bd("2"), null))
+                .withMessage("high");
     }
 
     @Test
-    @DisplayName("음수 회차는 거부한다")
-    void accumulate_NegativeRounds_Throws() {
-        assertThatThrownBy(() -> RANGE.accumulate(-1))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("0 이상");
+    @DisplayName("accumulate 는 회차 수만큼 곱한다 (§10.3)")
+    void accumulateMultipliesByRoundCount() {
+        AcquisitionRange perRound = new AcquisitionRange(bd("71.50"), bd("73.55"), bd("75.15"));
+
+        AcquisitionRange total = perRound.accumulate(6);
+
+        assertThat(total.low()).isEqualByComparingTo("429.00");
+        assertThat(total.base()).isEqualByComparingTo("441.30");
+        assertThat(total.high()).isEqualByComparingTo("450.90");
     }
 
     @Test
-    @DisplayName("null 값은 거부한다")
-    void constructor_Null_Throws() {
-        BigDecimal amount = BigDecimal.TEN;
-        assertThatThrownBy(() -> new AcquisitionRange(null, amount, amount))
-                .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new AcquisitionRange(amount, null, amount))
-                .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new AcquisitionRange(amount, amount, null))
-                .isInstanceOf(NullPointerException.class);
+    @DisplayName("회차 수 1 이면 그대로다")
+    void accumulateOneRoundIsIdentity() {
+        AcquisitionRange perRound = new AcquisitionRange(bd("71.50"), bd("73.55"), bd("75.15"));
+
+        AcquisitionRange total = perRound.accumulate(1);
+
+        assertThat(total.low()).isEqualByComparingTo(perRound.low());
+        assertThat(total.base()).isEqualByComparingTo(perRound.base());
+        assertThat(total.high()).isEqualByComparingTo(perRound.high());
+    }
+
+    @Test
+    @DisplayName("회차 수 0 이면 전부 0 이다 — 아직 아무것도 확보하지 못한 상태")
+    void accumulateZeroRoundsIsZero() {
+        AcquisitionRange total =
+                new AcquisitionRange(bd("71.50"), bd("73.55"), bd("75.15")).accumulate(0);
+
+        assertThat(total.low()).isEqualByComparingTo("0");
+        assertThat(total.base()).isEqualByComparingTo("0");
+        assertThat(total.high()).isEqualByComparingTo("0");
+    }
+
+    @Test
+    @DisplayName("음수 회차 수는 거부한다")
+    void accumulateRejectsNegativeRoundCount() {
+        AcquisitionRange perRound = new AcquisitionRange(bd("71.50"), bd("73.55"), bd("75.15"));
+
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> perRound.accumulate(-1))
+                .withMessageContaining("회차 수는 0 이상");
+    }
+
+    @Test
+    @DisplayName("누적해도 범위의 순서는 유지된다")
+    void accumulatePreservesOrdering() {
+        AcquisitionRange total =
+                new AcquisitionRange(bd("71.50"), bd("73.55"), bd("75.15")).accumulate(12);
+
+        assertThat(total.low()).isLessThan(total.base());
+        assertThat(total.base()).isLessThan(total.high());
     }
 }

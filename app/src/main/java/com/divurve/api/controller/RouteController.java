@@ -15,9 +15,9 @@ import org.springframework.web.bind.annotation.RestController;
 /**
  * Route 연결 엔드포인트 (API 명세 v2 §6) — <b>우선순위 P(구조만 준비)</b>.
  *
- * <p>요구사항 v2 §4.12 는 Route 의 목적함수 · 버킷 비율 · 분할 회차 · 달성 확률 정의를 전부
- * 미확정으로 둔다. 그래서 <b>계산하는 엔드포인트는 명세되지 않았고</b>, 이 컨트롤러는 데이터 계약인
- * RouteContext 직렬화 하나만 제공한다. 계획 계산은 {@code PlanController} 가 501 로 막고 있다.
+ * <p>이 컨트롤러는 데이터 계약인 RouteContext 직렬화 하나만 제공하며 어떤 계획도 계산하지
+ * 않는다. 계획 계산은 {@code PlanController} 가 담당한다. RouteContext 의 값을 실제로 채우는
+ * 것은 이슈 #85 다 — 지금은 기준 시각을 뺀 모든 값이 비어 있다.
  */
 @WebAdapter
 @RestController

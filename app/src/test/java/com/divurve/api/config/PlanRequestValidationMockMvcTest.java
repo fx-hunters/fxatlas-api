@@ -18,7 +18,6 @@ import com.divurve.domain.plan.PlanStepRepository;
 import com.divurve.domain.port.AuthPrincipal;
 import com.divurve.domain.port.DataSourceStatus;
 import com.divurve.domain.port.TokenProvider;
-import com.divurve.domain.route.RouteFeatureFlag;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -34,9 +33,8 @@ import org.springframework.test.web.servlet.MockMvc;
  * {@code UUID.fromString(null)} 을 호출해 {@code NullPointerException} → 500 으로 샜다.
  * {@code @NotBlank} + {@code @Valid} 가 실제 요청 경로에서 그보다 먼저 400 으로 막는지 확인한다.
  *
- * <p>{@code route.enabled} 기능 플래그는 {@code @Valid} 검증(메서드 인자 바인딩) 이후에 컨트롤러
- * 본문에서 확인되므로, 플래그를 켜지 않아도(즉 501 로 먼저 끝나지 않고) 이 검증이 먼저 걸린다 —
- * {@link RouteFeatureFlag} 를 목으로 두어 이 순서를 명시적으로 확인한다.
+ * <p>{@code @Valid} 는 메서드 인자 바인딩 단계에서 걸리므로 소유자 검증·계산에 진입하기 전에
+ * 400 으로 끝난다 — 협력자에 아무 상호작용이 없는지로 그 순서를 확인한다.
  */
 @WebMvcTest(PlanController.class)
 class PlanRequestValidationMockMvcTest {
@@ -68,9 +66,6 @@ class PlanRequestValidationMockMvcTest {
     private PlanPreviewResponseMapper planPreviewResponseMapper;
 
     @MockBean
-    private RouteFeatureFlag routeFeatureFlag;
-
-    @MockBean
     private TokenProvider tokenProvider;
 
     @MockBean
@@ -83,7 +78,7 @@ class PlanRequestValidationMockMvcTest {
     }
 
     @Test
-    void 목표_ID가_없으면_500이_아니라_400_VALIDATION_FAILED_이고_플래그_검사_전에_막힌다() throws Exception {
+    void 목표_ID가_없으면_500이_아니라_400_VALIDATION_FAILED_이고_소유자_검증_전에_막힌다() throws Exception {
         mockMvc.perform(post("/api/v1/plans/preview")
                         .header("Authorization", AUTH_HEADER)
                         .contentType(MediaType.APPLICATION_JSON)
@@ -92,6 +87,6 @@ class PlanRequestValidationMockMvcTest {
                 .andExpect(jsonPath("$.error.code").value("VALIDATION_FAILED"))
                 .andExpect(jsonPath("$.error.field").value("goal_id"));
 
-        verifyNoInteractions(routeFeatureFlag, planAccessService, planPreviewService);
+        verifyNoInteractions(planAccessService, planPreviewService);
     }
 }

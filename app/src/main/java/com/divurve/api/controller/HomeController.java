@@ -45,7 +45,7 @@ public class HomeController {
             summary = "홈 요약 6블록 조회",
             description = "오늘의 핵심·위험성향 Fit·외화현황·목표 영역·주의필요·Forecast 요약을 "
                     + "고정 순서로 반환한다. 데이터가 없는 블록도 생략하지 않고 state 로만 구분한다"
-                    + "(filled/empty/route_pending/not_measured).")
+                    + "(filled/empty/not_measured).")
     @ApiResponses({
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "200", description = "홈 요약"),
         @io.swagger.v3.oas.annotations.responses.ApiResponse(responseCode = "404", description = "사용자 없음")
@@ -74,8 +74,7 @@ public class HomeController {
                                 .map(goal -> new ActiveGoalDto(
                                         goal.id(), goal.name(), goal.currencyCode(), goal.targetAmount(),
                                         goal.targetDate(), goal.status()))
-                                .toList(),
-                        view.goalsRoute().routeEnabled()),
+                                .toList()),
                 new AttentionDto(
                         view.attention().regimeBadge(),
                         view.attention().upcomingEvents().stream()

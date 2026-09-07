@@ -10,13 +10,12 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 계획 회차 실행(완료/건너뛰기) 서비스 — <b>우선순위 P(구조만 준비)</b>.
+ * 계획 회차 실행(완료/건너뛰기) 서비스.
  * 회차 상태를 업데이트하고, 건너뛰기 시 남은 회차에 부담을 재분배한다.
  *
- * <p><b>요구사항 v2 §4.12 미확정</b> — 회차 분할·재분배가 전제하는 값(권장 분할 회차, 달성 확률
- * 정의, 안전/기회 버킷)은 전부 미확정이며 기존 문서의 4~8회 등은 <b>후보일 뿐 확정 요구사항이
- * 아니다</b>. 확정 전까지 이 서비스는 {@code RouteFeatureFlag} 뒤에 있어 호출되지 않는다
- * (호출자인 {@code PlanController} 가 501 로 막는다).
+ * <p><b>⚠ 아직 명세 §15 를 따르지 않는다.</b> 지금은 건너뛰기가 계획을 즉시 덮어쓰지만, 명세는
+ * 변경 계획을 미리보기로 반환하고 사용자 승인을 받은 뒤에만 적용하라고 규정한다(§15·§21-9).
+ * 미리보기·승인 흐름으로의 전환은 이슈 #86 에서 한다.
  *
  * <p>v1 안전모드(연속 건너뛰기 3회 → 계획 재생성) 판정은 제거했다. 기능 자체가 v2 에서 삭제됐고
  * 임계치 3 도 §4.12 의 미확정 값이었다. 연속 건너뛰기 <b>카운트</b>는 사실 기록이므로 남긴다.
@@ -41,7 +40,7 @@ public class PlanStepExecutionService {
      * @param seq             회차번호
      * @param executedAmount  실제 체결된 외화 금액
      * @return 완료된 회차
-     * @throws InvalidRequestException 회차가 pending 상태가 아닌 경우
+     * @throws InvalidRequestException 이미 완료·건너뛴 회차인 경우
      */
     public PlanStep completeStep(UUID planId, int seq, double executedAmount) {
         PlanStep step = planStepRepository.findByPlan_IdAndSeq(planId, seq)
@@ -69,7 +68,7 @@ public class PlanStepExecutionService {
      * @param seq         건너뛸 회차번호
      * @param targetAmount 목표 외화 금액 (남은 금액 계산용)
      * @return 건너뛰기 결과 (연속 건너뛰기 수, 새로운 부담 등)
-     * @throws InvalidRequestException 회차가 pending 상태가 아닌 경우
+     * @throws InvalidRequestException 이미 완료·건너뛴 회차인 경우
      */
     public SkipResult skipStep(UUID planId, int seq, double targetAmount) {
         // 계획 존재 여부 검증 (없는 계획의 회차는 건너뛸 수 없다)
@@ -104,11 +103,11 @@ public class PlanStepExecutionService {
         int remainingSteps = PlanCalculator.calculateRemainingSteps(
                 allSteps.size(), completedCount, skippedCount);
 
-        // 남은 회차(PENDING)에 남은 금액을 균등 재분배한다.
-        // remainingSteps 는 PENDING 회차수와 같으므로 0 이면 재분배 대상도 없다.
+        // 남은 미실행 회차에 남은 금액을 균등 재분배한다.
+        // remainingSteps 는 미실행 회차수와 같으므로 0 이면 재분배 대상도 없다.
         double burdenAfter = remainingSteps > 0 ? remainingAmount / remainingSteps : 0.0;
         for (PlanStep step : allSteps) {
-            if (step.getSeq() > seq && step.isPending()) {
+            if (step.getSeq() > seq && step.isOpen()) {
                 step.updateAmount(burdenAfter);
                 planStepRepository.save(step);
             }

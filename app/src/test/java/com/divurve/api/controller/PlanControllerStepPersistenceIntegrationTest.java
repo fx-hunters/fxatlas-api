@@ -20,7 +20,6 @@ import com.divurve.domain.plan.PlanStepExecutionService;
 import com.divurve.domain.plan.PlanStepRepository;
 import com.divurve.domain.plan.PlanStepStatus;
 import com.divurve.domain.plan.entity.Plan;
-import com.divurve.domain.route.RouteFeatureFlag;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
 import java.util.UUID;
@@ -78,8 +77,7 @@ class PlanControllerStepPersistenceIntegrationTest extends RepositoryTestBase {
                 planConfirmService,
                 planStepExecutionService,
                 planPreviewService,
-                planPreviewResponseMapper,
-                new RouteFeatureFlag(true));
+                planPreviewResponseMapper);
 
         User owner = userRepository.save(User.createDemo("plan-steps-" + UUID.randomUUID() + "@divurve.com", "사용자"));
         ownerId = owner.getId();
@@ -104,7 +102,7 @@ class PlanControllerStepPersistenceIntegrationTest extends RepositoryTestBase {
                 .extracting(PlanResponse.Step::seq)
                 .containsExactly(1, 2, 3, 4);
         assertThat(response.data().steps())
-                .allSatisfy(step -> assertThat(step.status()).isEqualTo(PlanStepStatus.PENDING));
+                .allSatisfy(step -> assertThat(step.status()).isEqualTo(PlanStepStatus.SCHEDULED));
 
         // 확정 시 반환한 seq 순서가 DB 에 실제로 저장됐는지 리포지토리로 다시 확인한다.
         UUID planId = UUID.fromString(response.data().id());

@@ -14,15 +14,14 @@ import java.util.List;
 import java.util.UUID;
 
 /**
- * 계획 확정·저장·버전 관리 서비스 — <b>우선순위 P(구조만 준비)</b>.
+ * 계획 확정·저장·버전 관리 서비스.
  * 계획의 메타정보(safe_ratio, split_count 등)를 받아 저장하고,
  * 회차 목록을 생성한 후 버전 이력을 관리한다.
  *
- * <p><b>⚠ 요구사항 v2 §4.12 미확정 — 값은 후보이며 확정 요구사항이 아니다.</b> 안전/기회 버킷의
- * 존재와 비율 · 목적별 하한선 · 권장 분할 회차 · 몬테카를로 적용 여부 · 달성 확률 정의가 전부
- * 미확정이고, 기존 문서의 50/70/85/95% 와 4~8회는 후보값이다. API 명세 v2 §6 은 Route 계산
- * 엔드포인트를 명세하지 않으므로, {@code route.enabled} 가 꺼진 기본 상태에서 이 서비스는
- * 호출되지 않는다 — {@code PlanController} 가 진입 전에 501 로 막는다.
+ * <p><b>⚠ 아직 옛 계산 모델이다.</b> {@code safe_ratio}·{@code split_count}·
+ * {@code opportunity_*} 는 플래너 명세 §23 이 산출 근거 불명으로 지목한 값들이며, §24 가 확정한
+ * 균등 회차 + 환율 범위 비용 모델({@code engine/planner})로의 교체는 이슈 #85 에서 한다.
+ * 이번 단계(#84)는 새 상태 어휘({@code status})만 함께 기록해 스키마와 코드가 어긋나지 않게 한다.
  */
 @UseCase
 public class PlanConfirmService {
@@ -75,6 +74,7 @@ public class PlanConfirmService {
         // 새 계획 생성
         Plan newPlan = Plan.builder(goal, newVersion)
                 .isActive(true)
+                .status(PlanStatus.ACTIVE)
                 .reason(changeReason)
                 .safeRatio(safeRatio)
                 .splitCount(splitCount)
@@ -103,7 +103,7 @@ public class PlanConfirmService {
                     step.scheduledDate(),
                     step.amount(),
                     0.0, // 초기 executed_amount는 0
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             planStepRepository.save(planStep);
         }
     }

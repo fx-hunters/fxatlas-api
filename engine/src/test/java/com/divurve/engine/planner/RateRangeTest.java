@@ -1,73 +1,100 @@
 package com.divurve.engine.planner;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatCode;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.assertThatIllegalArgumentException;
+import static org.assertj.core.api.Assertions.assertThatNullPointerException;
 
 import java.math.BigDecimal;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link RateRange} — 계산에 쓰는 환율 범위 (플래너 명세 §7·§9.1).
+ * {@link RateRange} 테스트 — 환율 범위의 불변조건 (명세 §7·§9.1·§21-6).
  */
 @DisplayName("RateRange")
 class RateRangeTest {
 
-    @Test
-    @DisplayName("하단·기준·상단을 그대로 담는다")
-    void constructor_ValidRange_KeepsValues() {
-        RateRange range = new RateRange(
-                new BigDecimal("1300"), new BigDecimal("1350"), new BigDecimal("1400"));
-
-        assertThat(range.low()).isEqualByComparingTo("1300");
-        assertThat(range.base()).isEqualByComparingTo("1350");
-        assertThat(range.high()).isEqualByComparingTo("1400");
+    private static BigDecimal bd(String value) {
+        return new BigDecimal(value);
     }
 
     @Test
-    @DisplayName("세 값이 같아도 유효하다 — Forecast 가 없을 때 기준 환율만으로 계산한다")
-    void constructor_AllEqual_IsValid() {
-        assertThatCode(() -> new RateRange(BigDecimal.TEN, BigDecimal.TEN, BigDecimal.TEN))
-                .doesNotThrowAnyException();
+    @DisplayName("low <= base <= high 인 범위를 받는다")
+    void acceptsOrderedRange() {
+        RateRange rates = new RateRange(bd("1330.60"), bd("1359.50"), bd("1389.02"));
+
+        assertThat(rates.low()).isEqualByComparingTo("1330.60");
+        assertThat(rates.base()).isEqualByComparingTo("1359.50");
+        assertThat(rates.high()).isEqualByComparingTo("1389.02");
     }
 
     @Test
-    @DisplayName("하단이 기준보다 크면 거부한다")
-    void constructor_LowAboveBase_Throws() {
-        assertThatThrownBy(() -> new RateRange(
-                new BigDecimal("1400"), new BigDecimal("1350"), new BigDecimal("1400")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("low <= base <= high");
+    @DisplayName("세 값이 모두 같아도 유효하다 — 범위가 좁혀진 경우")
+    void acceptsDegenerateRange() {
+        RateRange rates = new RateRange(bd("1359.50"), bd("1359.50"), bd("1359.50"));
+
+        assertThat(rates.low()).isEqualByComparingTo(rates.high());
     }
 
     @Test
-    @DisplayName("기준이 상단보다 크면 거부한다")
-    void constructor_BaseAboveHigh_Throws() {
-        assertThatThrownBy(() -> new RateRange(
-                new BigDecimal("1300"), new BigDecimal("1400"), new BigDecimal("1350")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("low <= base <= high");
+    @DisplayName("환율이 0 이면 거부한다")
+    void rejectsZeroRate() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new RateRange(BigDecimal.ZERO, bd("1"), bd("2")))
+                .withMessageContaining("환율은 0보다 커야 합니다");
     }
 
     @Test
-    @DisplayName("환율이 0 이하면 거부한다")
-    void constructor_NonPositiveRate_Throws() {
-        assertThatThrownBy(() -> new RateRange(
-                BigDecimal.ZERO, new BigDecimal("1350"), new BigDecimal("1400")))
-                .isInstanceOf(IllegalArgumentException.class)
-                .hasMessageContaining("0보다 커야");
+    @DisplayName("환율이 음수면 거부한다")
+    void rejectsNegativeRate() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new RateRange(bd("-1"), bd("1"), bd("2")))
+                .withMessageContaining("환율은 0보다 커야 합니다");
     }
 
     @Test
-    @DisplayName("null 환율은 거부한다")
-    void constructor_Null_Throws() {
-        BigDecimal rate = new BigDecimal("1350");
-        assertThatThrownBy(() -> new RateRange(null, rate, rate))
-                .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new RateRange(rate, null, rate))
-                .isInstanceOf(NullPointerException.class);
-        assertThatThrownBy(() -> new RateRange(rate, rate, null))
-                .isInstanceOf(NullPointerException.class);
+    @DisplayName("low 가 base 보다 크면 거부한다")
+    void rejectsLowAboveBase() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new RateRange(bd("1400"), bd("1359"), bd("1389")))
+                .withMessageContaining("low <= base <= high");
+    }
+
+    @Test
+    @DisplayName("base 가 high 보다 크면 거부한다")
+    void rejectsBaseAboveHigh() {
+        assertThatIllegalArgumentException()
+                .isThrownBy(() -> new RateRange(bd("1330"), bd("1400"), bd("1389")))
+                .withMessageContaining("low <= base <= high");
+    }
+
+    @Test
+    @DisplayName("null 값은 각각 거부한다")
+    void rejectsNulls() {
+        assertThatNullPointerException()
+                .isThrownBy(() -> new RateRange(null, bd("1"), bd("2")))
+                .withMessage("low");
+        assertThatNullPointerException()
+                .isThrownBy(() -> new RateRange(bd("1"), null, bd("2")))
+                .withMessage("base");
+        assertThatNullPointerException()
+                .isThrownBy(() -> new RateRange(bd("1"), bd("2"), null))
+                .withMessage("high");
+    }
+
+    @Test
+    @DisplayName("100엔 고시를 1엔 기준으로 정규화한 값을 담는다 (§21-6)")
+    void holdsPerUnitNormalizedRates() {
+        // JPY 는 100엔당 원화로 고시된다. 정규화는 QuoteUnitNormalizer 의 몫이고,
+        // 이 record 는 정규화가 끝난 per-unit 값만 받는다는 것을 계약으로 남긴다.
+        RateRange perHundredYen = new RateRange(bd("890.00"), bd("900.00"), bd("910.00"));
+        BigDecimal quoteUnit = bd("100");
+
+        RateRange perUnit = new RateRange(
+                perHundredYen.low().divide(quoteUnit),
+                perHundredYen.base().divide(quoteUnit),
+                perHundredYen.high().divide(quoteUnit));
+
+        assertThat(perUnit.base()).isEqualByComparingTo("9.00");
     }
 }

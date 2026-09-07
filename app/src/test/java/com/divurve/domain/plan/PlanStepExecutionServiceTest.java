@@ -70,7 +70,7 @@ class PlanStepExecutionServiceTest {
             double executedAmount = 2500.0;
             PlanStep step = PlanStep.create(
                     plan, seq, LocalDate.of(2024, 1, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
 
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
                     .thenReturn(Optional.of(step));
@@ -113,16 +113,16 @@ class PlanStepExecutionServiceTest {
             int seq = 1;
             PlanStep step1 = PlanStep.create(
                     plan, 1, LocalDate.of(2024, 1, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step2 = PlanStep.create(
                     plan, 2, LocalDate.of(2024, 2, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step3 = PlanStep.create(
                     plan, 3, LocalDate.of(2024, 3, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step4 = PlanStep.create(
                     plan, 4, LocalDate.of(2024, 4, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
 
             when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
@@ -156,10 +156,10 @@ class PlanStepExecutionServiceTest {
                     PlanStepStatus.SKIPPED);
             PlanStep step3 = PlanStep.create(
                     plan, 3, LocalDate.of(2024, 3, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step4 = PlanStep.create(
                     plan, 4, LocalDate.of(2024, 4, 1), 2500.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
 
             when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
@@ -209,16 +209,16 @@ class PlanStepExecutionServiceTest {
             int seq = 1;
             PlanStep step1 = PlanStep.create(
                     plan, 1, LocalDate.of(2024, 1, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step2 = PlanStep.create(
                     plan, 2, LocalDate.of(2024, 2, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step3 = PlanStep.create(
                     plan, 3, LocalDate.of(2024, 3, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step4 = PlanStep.create(
                     plan, 4, LocalDate.of(2024, 4, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
 
             when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
@@ -249,13 +249,13 @@ class PlanStepExecutionServiceTest {
                     PlanStepStatus.COMPLETED);
             PlanStep step2 = PlanStep.create(
                     plan, 2, LocalDate.of(2024, 2, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
             PlanStep step3 = PlanStep.create(
                     plan, 3, LocalDate.of(2024, 3, 1), 1000.0, 1000.0,
                     PlanStepStatus.COMPLETED);
             PlanStep step4 = PlanStep.create(
                     plan, 4, LocalDate.of(2024, 4, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
 
             when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))
@@ -290,7 +290,7 @@ class PlanStepExecutionServiceTest {
                     PlanStepStatus.COMPLETED);
             PlanStep step2 = PlanStep.create(
                     plan, 2, LocalDate.of(2024, 2, 1), 1000.0, 0.0,
-                    PlanStepStatus.PENDING);
+                    PlanStepStatus.SCHEDULED);
 
             when(planRepository.findById(planId)).thenReturn(Optional.of(plan));
             when(planStepRepository.findByPlan_IdAndSeq(planId, seq))

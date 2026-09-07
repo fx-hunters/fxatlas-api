@@ -23,7 +23,7 @@ public record HomeSummaryResponse(
         AttentionDto attention,
         ForecastDto forecast) {
 
-    /** 블록 순서·키·상태. {@code state}: filled/empty/route_pending/not_measured. */
+    /** 블록 순서·키·상태. {@code state}: filled/empty/not_measured. */
     public record BlockDto(
             int order,
             @Schema(example = "today") String key,
@@ -50,8 +50,8 @@ public record HomeSummaryResponse(
             @Schema(example = "84000") Long dayChangeKrw) {
     }
 
-    /** 목표 영역 — Route 확정 전까지는 항상 {@code routeEnabled=false}. */
-    public record GoalsRouteDto(List<ActiveGoalDto> activeGoals, boolean routeEnabled) {
+    /** 목표 영역. {@code route_enabled} 는 이슈 #84 에서 제거했다 — 기능이 항상 열려 있다. */
+    public record GoalsRouteDto(List<ActiveGoalDto> activeGoals) {
     }
 
     /** 활성 목표 요약. */

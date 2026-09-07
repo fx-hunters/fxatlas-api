@@ -47,16 +47,6 @@ app:
       request-timeout: 5s
       total-budget: 8s
 
-# Route 기능 플래그 (API 명세 v2 §6.2, 요구사항 v2 §4.12).
-# Route 는 전부 P(구조만 준비)다 — 목적함수·버킷 비율·목적별 하한선·권장 분할 회차·
-# 몬테카를로 적용 여부·달성 확률 정의가 모두 미확정이고, 50/70/85/95% 와 4~8회는 후보값일 뿐이다.
-# 꺼져 있으면 /goals 쓰기와 /plans/* 는 501 NOT_IMPLEMENTED 로 응답하고,
-# GET /goals 는 빈 배열 + route_enabled=false 를 반환한다.
-# 켜는 방법: 아래 값을 true 로 바꾸거나, ROUTE_ENABLED=true 환경변수 또는 --route.enabled=true 기동 인자.
-# 계산 로직이 확정되고 검증까지 끝난 뒤에만 켠다.
-route:
-  enabled: ${ROUTE_ENABLED:false}
-
 spring:
   application:
     name: divurve-api
