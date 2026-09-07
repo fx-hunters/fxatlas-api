@@ -58,6 +58,9 @@ class EcosFxRateProvider implements FxRateProvider {
             .orElseThrow(() -> new IllegalStateException(
                 "ECOS API key is not configured (app.external.ecos.api-key)"));
 
+        // 주입되는 Clock 은 이미 KST 다(ExternalDataConfig#systemClock, 이슈 #99). 그래도 withZone 을
+        // 남겨 둔다 — ECOS 는 KST 영업일로 고시하므로, Clock 이 어떤 타임존이든 여기서 보는 "오늘"은
+        // KST 여야 한다. 어댑터가 외부 규약을 스스로 지키게 하는 편이 안전하다.
         LocalDate today = LocalDate.now(clock.withZone(KST));
         String end = today.format(YYYYMMDD);
         String start = today.minusDays(LOOKBACK_DAYS).format(YYYYMMDD);

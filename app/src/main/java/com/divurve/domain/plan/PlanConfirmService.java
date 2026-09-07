@@ -9,6 +9,7 @@ import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.entity.Plan;
 import com.divurve.domain.plan.entity.PlanStep;
 import com.divurve.engine.plan.PlanCalculator;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
@@ -30,14 +31,17 @@ public class PlanConfirmService {
     private final GoalRepository goalRepository;
     private final PlanRepository planRepository;
     private final PlanStepRepository planStepRepository;
+    private final Clock clock;
 
     public PlanConfirmService(
             GoalRepository goalRepository,
             PlanRepository planRepository,
-            PlanStepRepository planStepRepository) {
+            PlanStepRepository planStepRepository,
+            Clock clock) {
         this.goalRepository = requireNonNull(goalRepository, "goalRepository");
         this.planRepository = requireNonNull(planRepository, "planRepository");
         this.planStepRepository = requireNonNull(planStepRepository, "planStepRepository");
+        this.clock = requireNonNull(clock, "clock");
     }
 
     /**
@@ -146,7 +150,7 @@ public class PlanConfirmService {
         int intervalDays = resolveIntervalDays(plan.getGoal().getRecurInterval(), splitCount);
 
         return PlanCalculator
-                .generateEqualSplitSchedule(safeAmountKrw, splitCount, intervalDays, LocalDate.now())
+                .generateEqualSplitSchedule(safeAmountKrw, splitCount, intervalDays, LocalDate.now(clock))
                 .stream()
                 .map(step -> new StepInput(step.seq(), step.scheduledDate(), step.amount()))
                 .toList();

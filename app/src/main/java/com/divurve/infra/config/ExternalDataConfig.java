@@ -5,6 +5,7 @@ import com.divurve.infra.macro.FredProperties;
 import com.github.benmanes.caffeine.cache.Caffeine;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.ZoneId;
 import java.util.List;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.web.client.ClientHttpRequestFactories;
@@ -61,9 +62,20 @@ public class ExternalDataConfig {
             .build();
     }
 
+    /**
+     * 도메인 전역의 "오늘" 기준 타임존. 환율 출처인 ECOS 가 KST 영업일로 고시하므로,
+     * 도메인이 판단하는 오늘도 KST 여야 어댑터가 받아 온 날짜와 어긋나지 않는다.
+     */
+    static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
+
+    /**
+     * UTC 가 아니라 KST 다(이슈 #99). UTC 로 두면 매일 00:00~09:00 KST 동안
+     * {@code LocalDate.now(clock)} 이 하루 전을 가리켜, {@code /market/regime} 의 {@code as_of} 가
+     * 영업일이 아닌 날짜로 나가고 데이터 신선도 판정도 하루 어긋났다.
+     */
     @Bean
     Clock systemClock() {
-        return Clock.systemUTC();
+        return Clock.system(SERVICE_ZONE);
     }
 
     @Bean

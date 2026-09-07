@@ -16,6 +16,7 @@ import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.xray.XrayService;
 import com.divurve.domain.xray.XrayService.PortfolioSnapshot;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -65,6 +66,7 @@ public class HomeSummaryService {
     private final MarketRegimeService marketRegimeService;
     private final GoalService goalService;
     private final RouteFeatureFlag routeFeatureFlag;
+    private final Clock clock;
 
     public HomeSummaryService(
             UserRepository userRepository,
@@ -73,7 +75,8 @@ public class HomeSummaryService {
             ForecastService forecastService,
             MarketRegimeService marketRegimeService,
             GoalService goalService,
-            RouteFeatureFlag routeFeatureFlag) {
+            RouteFeatureFlag routeFeatureFlag,
+            Clock clock) {
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository");
         this.xrayService = Objects.requireNonNull(xrayService, "xrayService");
         this.riskProfileService = Objects.requireNonNull(riskProfileService, "riskProfileService");
@@ -81,6 +84,7 @@ public class HomeSummaryService {
         this.marketRegimeService = Objects.requireNonNull(marketRegimeService, "marketRegimeService");
         this.goalService = Objects.requireNonNull(goalService, "goalService");
         this.routeFeatureFlag = Objects.requireNonNull(routeFeatureFlag, "routeFeatureFlag");
+        this.clock = Objects.requireNonNull(clock, "clock");
     }
 
     /**
@@ -159,7 +163,7 @@ public class HomeSummaryService {
     }
 
     private AttentionView resolveAttention(MarketRegimeView regime) {
-        LocalDate cutoff = LocalDate.now().plusDays(UPCOMING_EVENT_WINDOW_DAYS);
+        LocalDate cutoff = LocalDate.now(clock).plusDays(UPCOMING_EVENT_WINDOW_DAYS);
         List<EconomicEventView> upcoming = forecastService.getEvents().stream()
                 .filter(event -> !event.date().isAfter(cutoff))
                 .toList();
