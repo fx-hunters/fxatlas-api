@@ -237,7 +237,6 @@ class PlannerSchemaConstraintTest extends RepositoryTestBase {
 
         Plan found = planRepository.findById(plan.getId()).orElseThrow();
         assertThat(found.getStatus()).isEqualTo(PlanStatus.SUPERSEDED);
-        assertThat(found.isActive()).isFalse();
         assertThat(found.isActivePlan()).isFalse();
         assertThat(found.getSupersededBy()).isEqualTo(newPlanId);
     }

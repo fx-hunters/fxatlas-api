@@ -26,6 +26,14 @@ public final class PlannerPolicy {
     /** 학비·납부 목적의 영업일 버퍼 (명세 §9.4) — 송금 처리에 더 긴 여유가 필요하다. */
     public static final int TUITION_BUSINESS_DAY_BUFFER = 5;
 
+    /**
+     * 환율·Forecast 데이터가 이보다 오래되면 계획을 계산하지 않는다 (명세 §8·§20).
+     *
+     * <p>환율은 영업일 종가이므로 금요일 종가가 월요일 아침까지 최신인 경우가 정상이다.
+     * 주말과 연휴 하루를 감안해 4일로 둔다 — 이보다 짧으면 월요일마다 계획 생성이 막힌다.
+     */
+    public static final int MAX_RATE_STALENESS_DAYS = 4;
+
     private PlannerPolicy() {
     }
 

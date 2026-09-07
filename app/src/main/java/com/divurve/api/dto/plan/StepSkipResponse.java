@@ -1,26 +1,50 @@
 package com.divurve.api.dto.plan;
 
+import com.divurve.domain.plan.PlanStepExecutionService;
+import io.swagger.v3.oas.annotations.media.Schema;
+import java.util.List;
+
 /**
- * 회차 건너뛰기 응답 (POST /plans/{id}/steps/{seq}/skip) — <b>우선순위 P(구조만 준비)</b>.
+ * 회차 건너뛰기 응답 (플래너 명세 §15). <b>변경 계획 미리보기이며 아무것도 저장되지 않았다.</b>
  *
- * <p>v1 의 {@code safeModeTriggered} 필드는 <b>제거했다</b>. v1 안전모드(연속 건너뛰기 3회 도달 시
- * 계획을 safe_mode 로 재생성)는 이미 삭제된 기능이고, 임계치 3 자체가 요구사항 v2 §4.12 의 미확정
- * 값이었다. {@code achieveProb} 는 달성 확률의 정의가 미확정이라 0 으로 고정되어 있다(명세 v2 §6.3).
+ * <p>명세 §15 는 건너뛰기가 현재 계획을 즉시 덮어쓰지 않도록 요구한다 — 남은 회차의 부담이
+ * 늘어나는 것을 받아들일지는 사용자가 정할 문제다. 새 회차 금액이 예산을 넘으면 자동 적용하지
+ * 않고 조정 선택지를 함께 낸다.
+ *
+ * @param seq              건너뛸 회차 번호
+ * @param applied          적용 여부. 항상 {@code false} — 승인 전에는 계획이 바뀌지 않는다 (§21-9)
+ * @param amountBefore     건너뛰기 전 회차 금액
+ * @param amountAfter      재분배 후 남은 회차당 금액
+ * @param remainingAmount  재분배 후 남은 외화
+ * @param remainingRounds  재분배를 받을 회차 수
+ * @param adjustmentOptions 조정 선택지 (명세 §15). 재분배할 회차가 없을 때만 채워진다
  */
+@Schema(description = "회차 건너뛰기 미리보기 (플래너 명세 §15)")
 public record StepSkipResponse(
-        Redistributed redistributed,
-        AchieveProb achieveProb,
-        int consecutiveSkips,
-        int newPlanVersion) {
+        int seq,
+        boolean applied,
+        double amountBefore,
+        double amountAfter,
+        double remainingAmount,
+        int remainingRounds,
+        List<String> adjustmentOptions) {
 
-    /** 남은 회차 재분배. */
-    public record Redistributed(
-            double perStepBefore,
-            double perStepAfter,
-            double increasePct) {
-    }
+    /** 명세 §15 가 열거한 네 가지 조정 선택지. */
+    private static final List<String> ADJUSTMENT_OPTIONS = List.of(
+            "CHANGE_ROUND_BUDGET",
+            "CHANGE_TARGET_AMOUNT",
+            "CHANGE_TARGET_DATE",
+            "PAUSE_PLAN");
 
-    /** 달성 확률 변화. 정의 미확정(요구사항 v2 §4.12)이라 현재는 항상 0 이다. */
-    public record AchieveProb(double before, double after) {
+    /** 도메인 미리보기를 응답으로 옮긴다. */
+    public static StepSkipResponse from(PlanStepExecutionService.SkipPreview preview) {
+        return new StepSkipResponse(
+                preview.seq(),
+                false,
+                preview.amountBefore(),
+                preview.amountAfter(),
+                preview.remainingAmount(),
+                preview.remainingRounds(),
+                preview.exhausted() ? ADJUSTMENT_OPTIONS : List.of());
     }
 }
