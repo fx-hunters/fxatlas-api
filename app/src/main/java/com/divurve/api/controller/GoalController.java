@@ -63,12 +63,7 @@ public class GoalController {
     @PostMapping
     public ApiResponse<GoalResponse> createGoal(
             @CurrentUser UUID userId,
-<<<<<<< HEAD
-            @RequestBody GoalCreateRequest request) {
-=======
             @Valid @RequestBody GoalCreateRequest request) {
-        routeFeatureFlag.requireEnabled();
->>>>>>> develop
         Goal goal = goalService.create(
                 userId,
                 request.name(),
@@ -100,12 +95,7 @@ public class GoalController {
     public ApiResponse<GoalResponse> updateGoal(
             @CurrentUser UUID userId,
             @PathVariable String id,
-<<<<<<< HEAD
-            @RequestBody GoalUpdateRequest request) {
-=======
             @Valid @RequestBody GoalUpdateRequest request) {
-        routeFeatureFlag.requireEnabled();
->>>>>>> develop
         UUID goalId = UUID.fromString(id);
         Goal goal = goalService.update(
                 userId,

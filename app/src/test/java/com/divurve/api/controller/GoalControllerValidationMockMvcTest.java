@@ -12,7 +12,6 @@ import com.divurve.domain.goal.GoalService;
 import com.divurve.domain.port.AuthPrincipal;
 import com.divurve.domain.port.DataSourceStatus;
 import com.divurve.domain.port.TokenProvider;
-import com.divurve.domain.route.RouteFeatureFlag;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
@@ -49,9 +48,6 @@ class GoalControllerValidationMockMvcTest {
     private GoalService goalService;
 
     @MockBean
-    private RouteFeatureFlag routeFeatureFlag;
-
-    @MockBean
     private TokenProvider tokenProvider;
 
     @MockBean
@@ -61,7 +57,6 @@ class GoalControllerValidationMockMvcTest {
 
     @BeforeEach
     void setUp() {
-        when(routeFeatureFlag.isEnabled()).thenReturn(true);
         when(tokenProvider.verify(BEARER_TOKEN)).thenReturn(Optional.of(new AuthPrincipal(userId, false)));
     }
 

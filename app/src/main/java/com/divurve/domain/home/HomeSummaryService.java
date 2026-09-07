@@ -63,11 +63,7 @@ public class HomeSummaryService {
     private final ForecastService forecastService;
     private final MarketRegimeService marketRegimeService;
     private final GoalService goalService;
-<<<<<<< HEAD
-=======
-    private final RouteFeatureFlag routeFeatureFlag;
     private final Clock clock;
->>>>>>> develop
 
     public HomeSummaryService(
             UserRepository userRepository,
@@ -75,24 +71,15 @@ public class HomeSummaryService {
             RiskProfileService riskProfileService,
             ForecastService forecastService,
             MarketRegimeService marketRegimeService,
-<<<<<<< HEAD
-            GoalService goalService) {
-=======
             GoalService goalService,
-            RouteFeatureFlag routeFeatureFlag,
             Clock clock) {
->>>>>>> develop
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository");
         this.xrayService = Objects.requireNonNull(xrayService, "xrayService");
         this.riskProfileService = Objects.requireNonNull(riskProfileService, "riskProfileService");
         this.forecastService = Objects.requireNonNull(forecastService, "forecastService");
         this.marketRegimeService = Objects.requireNonNull(marketRegimeService, "marketRegimeService");
         this.goalService = Objects.requireNonNull(goalService, "goalService");
-<<<<<<< HEAD
-=======
-        this.routeFeatureFlag = Objects.requireNonNull(routeFeatureFlag, "routeFeatureFlag");
         this.clock = Objects.requireNonNull(clock, "clock");
->>>>>>> develop
     }
 
     /**
