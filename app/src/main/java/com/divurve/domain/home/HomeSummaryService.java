@@ -10,7 +10,6 @@ import com.divurve.domain.goal.GoalService;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.market.MarketRegimeService;
 import com.divurve.domain.market.MarketRegimeService.MarketRegimeView;
-import com.divurve.domain.route.RouteFeatureFlag;
 import com.divurve.domain.settings.RiskProfileService;
 import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.user.UserRepository;
@@ -50,7 +49,6 @@ public class HomeSummaryService {
     /** 블록 상태 어휘 (명세 §5.11). */
     public static final String STATE_FILLED = "filled";
     public static final String STATE_EMPTY = "empty";
-    public static final String STATE_ROUTE_PENDING = "route_pending";
     public static final String STATE_NOT_MEASURED = "not_measured";
 
     /** {@code forecast} 블록에 쓰는 대표 통화쌍 — 요구사항 v2 §4.5 "USD·JPY·EUR Mock 전환" 중 기본값. */
@@ -65,7 +63,6 @@ public class HomeSummaryService {
     private final ForecastService forecastService;
     private final MarketRegimeService marketRegimeService;
     private final GoalService goalService;
-    private final RouteFeatureFlag routeFeatureFlag;
     private final Clock clock;
 
     public HomeSummaryService(
@@ -75,7 +72,6 @@ public class HomeSummaryService {
             ForecastService forecastService,
             MarketRegimeService marketRegimeService,
             GoalService goalService,
-            RouteFeatureFlag routeFeatureFlag,
             Clock clock) {
         this.userRepository = Objects.requireNonNull(userRepository, "userRepository");
         this.xrayService = Objects.requireNonNull(xrayService, "xrayService");
@@ -83,7 +79,6 @@ public class HomeSummaryService {
         this.forecastService = Objects.requireNonNull(forecastService, "forecastService");
         this.marketRegimeService = Objects.requireNonNull(marketRegimeService, "marketRegimeService");
         this.goalService = Objects.requireNonNull(goalService, "goalService");
-        this.routeFeatureFlag = Objects.requireNonNull(routeFeatureFlag, "routeFeatureFlag");
         this.clock = Objects.requireNonNull(clock, "clock");
     }
 
@@ -144,11 +139,12 @@ public class HomeSummaryService {
                 portfolio.dayChangeKrw());
     }
 
-    /** Route 는 P — 플래그가 꺼져 있으면 빈 배열과 {@code route_enabled=false} 를 낸다(명세 §5.11·§6.2). */
+    /**
+     * 목표 블록. Route 기능 플래그를 제거하면서(이슈 #84) {@code route_pending} 분기도 함께
+     * 없앴다 — 계산 로직이 확정돼 "아직 준비 중"이라는 상태가 더는 발생하지 않는다.
+     * 목표가 없으면 {@code empty} 이며, 프론트는 새 목표 만들기를 안내한다(플래너 명세 §20).
+     */
     private GoalsRouteView resolveGoalsRoute(UUID userId) {
-        if (!routeFeatureFlag.isEnabled()) {
-            return new GoalsRouteView(List.of(), false, STATE_ROUTE_PENDING);
-        }
         List<Goal> goals = goalService.listByOwner(userId);
         List<ActiveGoalView> activeGoals = goals.stream()
                 .map(goal -> new ActiveGoalView(
@@ -159,7 +155,7 @@ public class HomeSummaryService {
                         goal.getTargetDate(),
                         goal.getStatus()))
                 .toList();
-        return new GoalsRouteView(activeGoals, true, activeGoals.isEmpty() ? STATE_EMPTY : STATE_FILLED);
+        return new GoalsRouteView(activeGoals, activeGoals.isEmpty() ? STATE_EMPTY : STATE_FILLED);
     }
 
     private AttentionView resolveAttention(MarketRegimeView regime) {
@@ -228,8 +224,8 @@ public class HomeSummaryService {
             double fxRatio, String topCurrencyCode, long sensitivity1pctKrw, Long dayChangeKrw) {
     }
 
-    /** 목표 영역 — Route 확정 전까지는 항상 {@code routeEnabled=false}. */
-    public record GoalsRouteView(List<ActiveGoalView> activeGoals, boolean routeEnabled, String state) {
+    /** 목표 영역. {@code routeEnabled} 는 이슈 #84 에서 제거했다 — 항상 켜져 있다. */
+    public record GoalsRouteView(List<ActiveGoalView> activeGoals, String state) {
     }
 
     /** 활성 목표 요약. */

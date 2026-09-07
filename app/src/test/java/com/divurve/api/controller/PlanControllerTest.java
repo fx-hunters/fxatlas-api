@@ -2,37 +2,44 @@ package com.divurve.api.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyDouble;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
-import com.divurve.api.dto.plan.ActivePlanResponse;
-import com.divurve.api.dto.plan.PlanCreateRequest;
-import com.divurve.api.dto.plan.PlanPreviewRequest;
-import com.divurve.api.dto.plan.PlanPreviewResponse;
-import com.divurve.api.dto.plan.PlanPreviewResponseMapper;
+import com.divurve.api.dto.plan.PlanRequest;
 import com.divurve.api.dto.plan.PlanResponse;
 import com.divurve.api.dto.plan.PlanVersionListResponse;
 import com.divurve.api.dto.plan.StepCompleteRequest;
 import com.divurve.api.dto.plan.StepCompleteResponse;
 import com.divurve.api.dto.plan.StepSkipResponse;
 import com.divurve.common.exception.NotFoundException;
-import com.divurve.common.exception.NotImplementedException;
 import com.divurve.common.response.ApiResponse;
+import com.divurve.domain.goal.GoalType;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.PlanAccessService;
+import com.divurve.domain.plan.PlanAllocationGuard;
+import com.divurve.domain.plan.PlanCalculationService;
 import com.divurve.domain.plan.PlanConfirmService;
-import com.divurve.domain.plan.PlanPreviewService.PlanPreviewInfo;
-import com.divurve.domain.plan.PlanPreviewService;
+import com.divurve.domain.plan.PlanDraft;
+import com.divurve.domain.plan.PlanRateContext;
 import com.divurve.domain.plan.PlanRepository;
+import com.divurve.domain.plan.PlanStatus;
 import com.divurve.domain.plan.PlanStepExecutionService;
-import com.divurve.domain.plan.PlanStepExecutionService.SkipResult;
 import com.divurve.domain.plan.PlanStepRepository;
 import com.divurve.domain.plan.PlanStepStatus;
 import com.divurve.domain.plan.entity.Plan;
+import com.divurve.domain.plan.entity.PlanCalculationMeta;
+import com.divurve.domain.plan.entity.PlanCostSummary;
 import com.divurve.domain.plan.entity.PlanStep;
-import com.divurve.domain.route.RouteFeatureFlag;
+import com.divurve.domain.user.entity.User;
+import java.math.BigDecimal;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -43,340 +50,423 @@ import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 /**
- * {@link PlanController} — 도메인 결과 → DTO 변환, data/meta 래핑, 미존재 예외,
- * 그리고 소유자 격리 (이슈 #50) 검증.
+ * {@link PlanController} — 계획 엔드포인트 (플래너 명세 §11·§12).
+ *
+ * <p>가장 중요한 검증은 <b>미리보기가 아무것도 저장하지 않는다</b>는 것이다 (§21-9).
+ * 그 성질이 깨지면 사용자가 "이 조건이면 어떻게 되지?"를 눌러본 것만으로 활성 계획이 바뀐다.
  */
 @DisplayName("PlanController")
 class PlanControllerTest {
 
+    private static final UUID USER_ID = UUID.randomUUID();
+    private static final UUID GOAL_ID = UUID.randomUUID();
+    private static final UUID PLAN_ID = UUID.randomUUID();
+    private static final Instant AS_OF = Instant.parse("2026-09-07T00:00:00Z");
+
     private PlanAccessService planAccessService;
     private PlanRepository planRepository;
     private PlanStepRepository planStepRepository;
+    private PlanCalculationService planCalculationService;
     private PlanConfirmService planConfirmService;
     private PlanStepExecutionService planStepExecutionService;
-    private PlanPreviewService planPreviewService;
-    private PlanPreviewResponseMapper planPreviewResponseMapper;
+    private PlanAllocationGuard planAllocationGuard;
     private PlanController controller;
-
-    /** route.enabled=false — 기본값. 6개 엔드포인트 전부 501 이어야 한다. */
-    private PlanController disabledController;
-
-    private UUID userId;
-    private UUID goalId;
-    private UUID planId;
     private Goal goal;
-    private Plan plan;
 
     @BeforeEach
     void setUp() {
         planAccessService = mock(PlanAccessService.class);
         planRepository = mock(PlanRepository.class);
         planStepRepository = mock(PlanStepRepository.class);
+        planCalculationService = mock(PlanCalculationService.class);
         planConfirmService = mock(PlanConfirmService.class);
         planStepExecutionService = mock(PlanStepExecutionService.class);
-        planPreviewService = mock(PlanPreviewService.class);
-        planPreviewResponseMapper = mock(PlanPreviewResponseMapper.class);
+        planAllocationGuard = mock(PlanAllocationGuard.class);
         controller = new PlanController(
                 planAccessService, planRepository, planStepRepository,
-                planConfirmService, planStepExecutionService,
-                planPreviewService, planPreviewResponseMapper,
-                new RouteFeatureFlag(true));
-        disabledController = new PlanController(
-                planAccessService, planRepository, planStepRepository,
-                planConfirmService, planStepExecutionService,
-                planPreviewService, planPreviewResponseMapper,
-                new RouteFeatureFlag(false));
+                planCalculationService, planConfirmService, planStepExecutionService,
+                planAllocationGuard);
 
-        userId = UUID.randomUUID();
-        goalId = UUID.randomUUID();
-        planId = UUID.randomUUID();
-
-        goal = mock(Goal.class);
-        when(goal.getId()).thenReturn(goalId);
-        when(goal.getTargetAmount()).thenReturn(10000.0);
-
-        plan = mock(Plan.class);
-        when(plan.getId()).thenReturn(planId);
-        when(plan.getGoal()).thenReturn(goal);
-        when(plan.getVersion()).thenReturn(2);
-        when(plan.isActive()).thenReturn(true);
-        when(plan.getReason()).thenReturn("변동성 확대");
-        when(plan.getSafeRatio()).thenReturn(0.8);
-        when(plan.getSplitCount()).thenReturn(4);
-        when(plan.getOpportunityAmount()).thenReturn(1000.0);
-        when(plan.getOpportunityTriggerRate()).thenReturn(110.0);
-        when(plan.getCreatedAt()).thenReturn(Instant.parse("2024-01-01T00:00:00Z"));
+        goal = Goal.builder(User.createDemo("a@b.com", "사용자"), "여행 자금", "onetime", "travel", "USD")
+                .targetAmount(4000.0)
+                .allocatedHoldingAmount(1000.0)
+                .goalType(GoalType.DEADLINE)
+                .targetDate(LocalDate.of(2026, 12, 24))
+                .preferredCadence("weekly")
+                .build();
+        goal.setIdForTest(GOAL_ID);
     }
 
-    /** 일정일이 있는 회차와 없는 회차를 함께 돌려준다 (매퍼의 null 분기까지 태운다). */
-    private List<PlanStep> steps() {
-        return List.of(
-                PlanStep.create(plan, 1, LocalDate.of(2024, 1, 1), 2500.0, 2500.0,
-                        PlanStepStatus.COMPLETED),
-                PlanStep.create(plan, 2, null, 2500.0, 0.0, PlanStepStatus.PENDING));
+    private PlanRequest deadlineRequest(String goalId) {
+        return new PlanRequest(
+                goalId, GoalType.DEADLINE, "travel", "USD", 1000.0, 4000.0,
+                LocalDate.of(2026, 12, 24), null, null, "weekly", null, null, null, null);
     }
 
-    @Test
-    @DisplayName("preview 는 요청 네 필드를 그대로 서비스에 넘기고 매퍼 결과를 data/meta 로 감싼다")
-    void previewDelegatesToServiceAndMapper() {
-        // 이슈 #19 시점에는 preview 가 스텁이라 501 을 단언했으나, 이슈 #18 에서 실구현되었다.
-        // 병합 과정에서 옛 단언이 남아 있었다(이슈 #38).
-        PlanPreviewRequest request = new PlanPreviewRequest(goalId.toString(), 100000L, 0.8, 4);
-        PlanPreviewInfo info = mock(PlanPreviewInfo.class);
-        PlanPreviewResponse mapped = mock(PlanPreviewResponse.class);
-        when(planPreviewService.generatePreview(goalId.toString(), 100000L, 0.8, 4)).thenReturn(info);
-        when(planPreviewResponseMapper.toResponse(info)).thenReturn(mapped);
-
-        ApiResponse<PlanPreviewResponse> response = controller.preview(userId, request);
-
-        verify(planPreviewService).generatePreview(goalId.toString(), 100000L, 0.8, 4);
-        verify(planPreviewResponseMapper).toResponse(info);
-        assertThat(response.data()).isSameAs(mapped);
-        assertThat(response.meta()).isNotNull();
+    private PlanDraft draft() {
+        PlanRateContext rates = new PlanRateContext(
+                "USD", 1300.0, 1350.0, 1400.0, 0.0175, 3000L, 1, 2, AS_OF, AS_OF, true);
+        return new PlanDraft(
+                AS_OF, "plan-2026.09.1-equal-split", rates,
+                new PlanDraft.GoalSummary(
+                        GoalType.DEADLINE, "travel", "USD",
+                        new BigDecimal("4000.00"), null, new BigDecimal("1000.00"),
+                        new BigDecimal("3000.00"), LocalDate.of(2026, 12, 24), "amount"),
+                new PlanDraft.Summary(
+                        PlanStatus.DRAFT, LocalDate.of(2026, 12, 21), 1, 0, 1, 0, 1,
+                        new PlanDraft.CostRange(3_900_000L, 4_050_000L, 4_200_000L),
+                        "RANGE_SENSITIVE", null),
+                List.of(new PlanDraft.Step(
+                        1, LocalDate.of(2026, 9, 7), new BigDecimal("3000.00"), null,
+                        new PlanDraft.CostRange(3_900_000L, 4_050_000L, 4_200_000L), null,
+                        BigDecimal.ZERO, null, null, PlanStepStatus.SCHEDULED, true)),
+                List.of());
     }
 
-    @Test
-    @DisplayName("createPlan 은 확정된 계획과 회차를 data/meta 로 감싼다")
-    void createPlanWrapsSavedPlan() {
-        PlanCreateRequest request = new PlanCreateRequest(100000L, 0.8, 4);
-        when(planConfirmService.confirmAndSaveWithSteps(goalId, 100000L, 0.8, 4, 0.0, 0.0, null))
-                .thenReturn(plan);
-        when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId)).thenReturn(steps());
+    private Plan storedPlan() {
+        Plan plan = Plan.builder(goal, 2)
+                .status(PlanStatus.ACTIVE)
+                .planEndDate(LocalDate.of(2026, 12, 21))
+                .calculationMeta(PlanCalculationMeta.builder("plan-2026.09.1-equal-split")
+                        .rateAsOf(AS_OF).forecastAsOf(AS_OF)
+                        .rates(1300.0, 1350.0, 1400.0)
+                        .spreadRatio(0.0175).feeKrw(3000L).quoteUnit(1)
+                        .build())
+                .costSummary(PlanCostSummary.of(
+                        "RANGE_SENSITIVE", 3_900_000L, 4_050_000L, 4_200_000L))
+                .build();
+        plan.setIdForTest(PLAN_ID);
+        return plan;
+    }
 
-        ApiResponse<PlanResponse> response = controller.createPlan(userId, goalId.toString(), request);
-
-        assertThat(response.meta()).isNotNull();
-        assertThat(response.data().id()).isEqualTo(planId.toString());
-        assertThat(response.data().goalId()).isEqualTo(goalId.toString());
-        assertThat(response.data().version()).isEqualTo(2);
-        assertThat(response.data().steps()).hasSize(2);
-        assertThat(response.data().steps().get(0).scheduledDate()).isEqualTo("2024-01-01");
-        assertThat(response.data().steps().get(1).scheduledDate()).isNull();
-        verify(planConfirmService).confirmAndSaveWithSteps(goalId, 100000L, 0.8, 4, 0.0, 0.0, null);
+    private PlanStep storedStep(Plan plan, int seq, String status) {
+        PlanStep step = PlanStep.create(
+                plan, seq, LocalDate.of(2026, 9, 7).plusWeeks(seq - 1L), 1500.0, 0.0, status);
+        step.recordCostBasis(null, 1350.0, 1_950_000L, 2_100_000L);
+        return step;
     }
 
     @Test
-    @DisplayName("listPlanVersions 는 버전 이력을 반환한다")
-    void listPlanVersionsReturnsHistory() {
-        when(planRepository.findByGoal_Id(goalId)).thenReturn(List.of(plan));
+    @DisplayName("미리보기는 아무것도 저장하지 않는다 — 불변조건 §21-9")
+    void preview_SavesNothing() {
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
 
-        ApiResponse<PlanVersionListResponse> response =
-                controller.listPlanVersions(userId, goalId.toString());
+        ApiResponse<PlanResponse> response = controller.preview(USER_ID, deadlineRequest(null));
 
-        assertThat(response.meta()).isNotNull();
-        assertThat(response.data().versions()).singleElement().satisfies(v -> {
-            assertThat(v.id()).isEqualTo(planId.toString());
-            assertThat(v.version()).isEqualTo(2);
-            assertThat(v.isActive()).isTrue();
-            assertThat(v.reason()).isEqualTo("변동성 확대");
-            assertThat(v.createdAt()).isEqualTo("2024-01-01T00:00:00Z");
-        });
+        assertThat(response.data().planId()).isNull();
+        assertThat(response.data().version()).isNull();
+        verifyNoInteractions(planConfirmService, planRepository, planStepRepository);
     }
 
     @Test
-    @DisplayName("getActivePlan 은 활성 계획과 회차를 반환한다")
-    void getActivePlanReturnsActivePlan() {
-        when(planRepository.findByGoal_IdAndIsActiveTrue(goalId)).thenReturn(Optional.of(plan));
-        when(planStepRepository.findByPlan_IdOrderBySeqAsc(planId)).thenReturn(steps());
+    @DisplayName("미리보기는 목표 저장 전에도 동작한다 — 명세 §12 장면 3·4")
+    void preview_WorksWithoutSavedGoal() {
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
 
-        ApiResponse<ActivePlanResponse> response = controller.getActivePlan(userId, goalId.toString());
+        ApiResponse<PlanResponse> response = controller.preview(USER_ID, deadlineRequest(null));
 
-        assertThat(response.meta()).isNotNull();
-        assertThat(response.data().id()).isEqualTo(planId.toString());
-        assertThat(response.data().steps()).hasSize(2);
+        assertThat(response.data().steps()).hasSize(1);
+        assertThat(response.data().goal().remainingAmount()).isEqualTo(3000.0);
+        verifyNoInteractions(planAccessService);
     }
 
-    /** 이슈 #50 이전에는 IllegalArgumentException 이라 500 이 나갔다 — 자원 부재는 404 다. */
     @Test
-    @DisplayName("getActivePlan 은 활성 계획이 없으면 404 를 던진다")
-    void getActivePlanThrowsWhenMissing() {
-        when(planRepository.findByGoal_IdAndIsActiveTrue(goalId)).thenReturn(Optional.empty());
+    @DisplayName("goal_id 를 주면 저장된 목표의 조건을 쓴다")
+    void preview_WithGoalId_UsesStoredGoal() {
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(goal);
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
 
-        String id = goalId.toString();
-        assertThatThrownBy(() -> controller.getActivePlan(userId, id))
+        controller.preview(USER_ID, deadlineRequest(GOAL_ID.toString()));
+
+        verify(planAccessService).requireGoalOwner(USER_ID, GOAL_ID);
+    }
+
+    @Test
+    @DisplayName("미리보기도 보유 외화 중복 배정을 막는다 — 불변조건 §21-7")
+    void preview_ChecksAllocation() {
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
+
+        controller.preview(USER_ID, deadlineRequest(null));
+
+        verify(planAllocationGuard).requireAllocatable(USER_ID, "USD", 1000.0, null);
+    }
+
+    @Test
+    @DisplayName("응답에는 계산 전제와 면책이 함께 실린다 — 명세 §11.1·§2")
+    void preview_CarriesMetaAndDisclaimer() {
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
+
+        PlanResponse data = controller.preview(USER_ID, deadlineRequest(null)).data();
+
+        assertThat(data.calculationMeta().policyVersion()).isEqualTo("plan-2026.09.1-equal-split");
+        assertThat(data.calculationMeta().rates().base()).isEqualTo(1350.0);
+        assertThat(data.calculationMeta().rateAsOf()).isEqualTo(AS_OF);
+        assertThat(data.disclaimer()).isEqualTo(PlanResponse.DISCLAIMER);
+    }
+
+    @Test
+    @DisplayName("계획 확정은 저장된 목표 조건으로 계산해 저장한다")
+    void createPlan_SavesCalculatedPlan() {
+        Plan saved = storedPlan();
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(goal);
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
+        when(planConfirmService.confirm(eq(GOAL_ID), any(), any())).thenReturn(saved);
+        when(planStepRepository.findByPlan_IdOrderBySeqAsc(PLAN_ID))
+                .thenReturn(List.of(storedStep(saved, 1, PlanStepStatus.SCHEDULED)));
+
+        PlanResponse data = controller.createPlan(
+                USER_ID, GOAL_ID.toString(), deadlineRequest(null)).data();
+
+        assertThat(data.planId()).isEqualTo(PLAN_ID.toString());
+        assertThat(data.version()).isEqualTo(2);
+        assertThat(data.summary().status()).isEqualTo(PlanStatus.ACTIVE);
+        verify(planConfirmService).confirm(eq(GOAL_ID), any(), any());
+    }
+
+    @Test
+    @DisplayName("정기형 요청은 회차 예산과 반복 주기를 계산 입력으로 넘긴다")
+    void preview_RecurringRequest_MapsRecurringFields() {
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
+        PlanRequest request = new PlanRequest(
+                null, GoalType.RECURRING, "investment", "USD", 0.0, 0.0, null,
+                null, null, null, 500_000L, "monthly", LocalDate.of(2026, 10, 1), 6);
+
+        controller.preview(USER_ID, request);
+
+        org.mockito.ArgumentCaptor<com.divurve.domain.plan.PlanInput> captor =
+                org.mockito.ArgumentCaptor.forClass(com.divurve.domain.plan.PlanInput.class);
+        verify(planCalculationService).calculate(eq(USER_ID), captor.capture());
+        assertThat(captor.getValue().budgetAmountKrw()).isEqualTo(500_000L);
+        assertThat(captor.getValue().cadence()).isEqualTo("monthly");
+        assertThat(captor.getValue().isRecurring()).isTrue();
+    }
+
+    @Test
+    @DisplayName("goal_id 가 공백이면 없는 것으로 본다")
+    void preview_BlankGoalId_IsTreatedAsAbsent() {
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
+
+        controller.preview(USER_ID, deadlineRequest("  "));
+
+        verify(planAllocationGuard).requireAllocatable(USER_ID, "USD", 1000.0, null);
+        verifyNoInteractions(planAccessService);
+    }
+
+    @Test
+    @DisplayName("goal_id 를 함께 보낸 확정 요청은 재계산 사유를 남긴다")
+    void createPlan_WithGoalId_RecordsReason() {
+        Plan saved = storedPlan();
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(goal);
+        when(planCalculationService.calculate(eq(USER_ID), any())).thenReturn(draft());
+        when(planConfirmService.confirm(eq(GOAL_ID), any(), any())).thenReturn(saved);
+        when(planStepRepository.findByPlan_IdOrderBySeqAsc(PLAN_ID)).thenReturn(List.of());
+
+        controller.createPlan(USER_ID, GOAL_ID.toString(), deadlineRequest(GOAL_ID.toString()));
+
+        verify(planConfirmService).confirm(eq(GOAL_ID), any(), eq("재계산"));
+    }
+
+    @Test
+    @DisplayName("정기형 목표의 저장된 계획은 회차 예산을 함께 낸다 — 명세 §11.2")
+    void getActivePlan_RecurringGoal_CarriesRoundBudget() {
+        Goal recurringGoal = Goal.builder(
+                        User.createDemo("a@b.com", "사용자"), "ETF 자금", "onetime", "investment", "USD")
+                .goalType(GoalType.RECURRING)
+                .budgetAmount(500_000)
+                .build();
+        recurringGoal.setIdForTest(GOAL_ID);
+        Plan active = Plan.builder(recurringGoal, 1).status(PlanStatus.ACTIVE).build();
+        active.setIdForTest(PLAN_ID);
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(recurringGoal);
+        when(planRepository.findFirstByGoal_IdAndStatus(GOAL_ID, PlanStatus.ACTIVE))
+                .thenReturn(Optional.of(active));
+        when(planStepRepository.findByPlan_IdOrderBySeqAsc(PLAN_ID)).thenReturn(List.of());
+
+        PlanResponse data = controller.getActivePlan(USER_ID, GOAL_ID.toString()).data();
+
+        assertThat(data.goal().roundBudgetKrw()).isEqualTo(500_000L);
+        // V13 이전 계획처럼 계산 메타가 없으면 값을 지어내지 않고 비운다
+        assertThat(data.calculationMeta()).isNull();
+    }
+
+    @Test
+    @DisplayName("활성 계획을 조회한다")
+    void getActivePlan_ReturnsActive() {
+        Plan active = storedPlan();
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(goal);
+        when(planRepository.findFirstByGoal_IdAndStatus(GOAL_ID, PlanStatus.ACTIVE))
+                .thenReturn(Optional.of(active));
+        when(planStepRepository.findByPlan_IdOrderBySeqAsc(PLAN_ID)).thenReturn(List.of(
+                storedStep(active, 1, PlanStepStatus.COMPLETED),
+                storedStep(active, 2, PlanStepStatus.SCHEDULED)));
+
+        PlanResponse data = controller.getActivePlan(USER_ID, GOAL_ID.toString()).data();
+
+        assertThat(data.summary().totalRounds()).isEqualTo(2);
+        assertThat(data.summary().completedRounds()).isEqualTo(1);
+        assertThat(data.summary().scheduledRounds()).isEqualTo(1);
+        assertThat(data.summary().nextActionSeq()).isEqualTo(2);
+    }
+
+    @Test
+    @DisplayName("활성 계획이 없으면 404 다 — 가짜 Curve 를 만들지 않는다 (명세 §20)")
+    void getActivePlan_NotFound() {
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(goal);
+        when(planRepository.findFirstByGoal_IdAndStatus(GOAL_ID, PlanStatus.ACTIVE))
+                .thenReturn(Optional.empty());
+        String goalId = GOAL_ID.toString();
+
+        assertThatThrownBy(() -> controller.getActivePlan(USER_ID, goalId))
                 .isInstanceOf(NotFoundException.class)
-                .hasMessageContaining("활성 계획을 찾을 수 없습니다");
+                .hasMessageContaining("계획을 먼저 만들어");
     }
 
     @Test
-    @DisplayName("completeStep 은 완료된 회차를 반환한다")
-    void completeStepReturnsCompletedStep() {
-        StepCompleteRequest request = new StepCompleteRequest(2500.0, 1350.0);
-        PlanStep completed = PlanStep.create(
-                plan, 1, LocalDate.of(2024, 1, 1), 2500.0, 2500.0, PlanStepStatus.COMPLETED);
-        when(planStepExecutionService.completeStep(planId, 1, 2500.0)).thenReturn(completed);
+    @DisplayName("버전 이력은 최신순이다 — 명세 §18")
+    void listPlanVersions_NewestFirst() {
+        Plan second = storedPlan();
+        Plan first = Plan.builder(goal, 1).status(PlanStatus.SUPERSEDED).reason("최초").build();
+        first.setIdForTest(UUID.randomUUID());
+        first.supersededBy(PLAN_ID);
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID)).thenReturn(goal);
+        when(planRepository.findByGoal_IdOrderByVersionDesc(GOAL_ID))
+                .thenReturn(List.of(second, first));
 
-        ApiResponse<StepCompleteResponse> response =
-                controller.completeStep(userId, planId.toString(), 1, request);
+        PlanVersionListResponse data =
+                controller.listPlanVersions(USER_ID, GOAL_ID.toString()).data();
 
-        assertThat(response.meta()).isNotNull();
-        assertThat(response.data().seq()).isEqualTo(1);
-        assertThat(response.data().status()).isEqualTo(PlanStepStatus.COMPLETED);
-        assertThat(response.data().executedAmount()).isEqualTo(2500.0);
-        assertThat(response.data().executedRate()).isEqualTo(1350.0);
-        assertThat(response.data().remainingAmount()).isZero();
+        assertThat(data.versions()).extracting(PlanVersionListResponse.Version::version)
+                .containsExactly(2, 1);
+        assertThat(data.versions().get(1).supersededBy()).isEqualTo(PLAN_ID.toString());
     }
 
     @Test
-    @DisplayName("skipStep 은 재분배 결과를 반환한다")
-    void skipStepReturnsRedistribution() {
-        when(planAccessService.requirePlanOwner(userId, planId)).thenReturn(plan);
-        when(planStepExecutionService.skipStep(planId, 2, 10000.0))
-                .thenReturn(new SkipResult(2, 2500.0, 3750.0, 50.0, 7500.0, 2));
+    @DisplayName("특정 버전 상세를 조회한다 — 명세 §21-11")
+    void getPlan_ReturnsVersionDetail() {
+        Plan plan = storedPlan();
+        when(planAccessService.requirePlanOwner(USER_ID, PLAN_ID)).thenReturn(plan);
+        when(planStepRepository.findByPlan_IdOrderBySeqAsc(PLAN_ID))
+                .thenReturn(List.of(storedStep(plan, 1, PlanStepStatus.COMPLETED)));
 
-        ApiResponse<StepSkipResponse> response = controller.skipStep(userId, planId.toString(), 2);
+        PlanResponse data = controller.getPlan(USER_ID, PLAN_ID.toString()).data();
 
-        assertThat(response.meta()).isNotNull();
-        assertThat(response.data().redistributed().perStepBefore()).isEqualTo(2500.0);
-        assertThat(response.data().redistributed().perStepAfter()).isEqualTo(3750.0);
-        assertThat(response.data().redistributed().increasePct()).isEqualTo(50.0);
-        assertThat(response.data().achieveProb().before()).isZero();
-        assertThat(response.data().achieveProb().after()).isZero();
-        assertThat(response.data().consecutiveSkips()).isEqualTo(2);
-        assertThat(response.data().newPlanVersion()).isEqualTo(2);
+        assertThat(data.planId()).isEqualTo(PLAN_ID.toString());
+        assertThat(data.steps()).hasSize(1);
     }
 
     @Test
-    @DisplayName("skipStep 은 계획이 없거나 남의 계획이면 404 를 던지고 실행 서비스를 부르지 않는다")
-    void skipStepThrowsWhenPlanMissing() {
-        when(planAccessService.requirePlanOwner(userId, planId))
+    @DisplayName("회차 완료는 실행 정보와 멱등 키를 그대로 넘긴다 — 명세 §14")
+    void completeStep_PassesExecutionDetails() {
+        Plan plan = storedPlan();
+        when(planAccessService.requirePlanOwner(USER_ID, PLAN_ID)).thenReturn(plan);
+        when(planStepExecutionService.completeStep(
+                any(), anyInt(), anyDouble(), anyDouble(), any(), any(), anyString()))
+                .thenReturn(new PlanStepExecutionService.CompleteResult(
+                        1, PlanStepStatus.COMPLETED, 1000.0, 1348.5,
+                        LocalDate.of(2026, 9, 8), 3000.0, 2, false));
+
+        StepCompleteResponse data = controller.completeStep(
+                USER_ID, PLAN_ID.toString(), 1,
+                new StepCompleteRequest(1000.0, 1348.5, LocalDate.of(2026, 9, 8), "key-1")).data();
+
+        assertThat(data.remainingAmount()).isEqualTo(3000.0);
+        assertThat(data.nextActionSeq()).isEqualTo(2);
+        assertThat(data.alreadyApplied()).isFalse();
+        verify(planStepExecutionService).completeStep(
+                PLAN_ID, 1, 4000.0, 1000.0, 1348.5, LocalDate.of(2026, 9, 8), "key-1");
+    }
+
+    @Test
+    @DisplayName("건너뛰기는 미리보기만 반환하고 계획을 바꾸지 않는다 — 명세 §15·§21-9")
+    void skipStep_ReturnsPreviewOnly() {
+        Plan plan = storedPlan();
+        when(planAccessService.requirePlanOwner(USER_ID, PLAN_ID)).thenReturn(plan);
+        when(planStepExecutionService.previewSkip(any(), anyInt(), any()))
+                .thenReturn(new PlanStepExecutionService.SkipPreview(
+                        2, 1000.0, 1500.0, 3000.0, 2, false));
+
+        StepSkipResponse data = controller.skipStep(USER_ID, PLAN_ID.toString(), 2).data();
+
+        assertThat(data.applied()).isFalse();
+        assertThat(data.amountBefore()).isEqualTo(1000.0);
+        assertThat(data.amountAfter()).isEqualTo(1500.0);
+        assertThat(data.adjustmentOptions()).isEmpty();
+        verify(planRepository, never()).save(any());
+    }
+
+    @Test
+    @DisplayName("재분배할 회차가 없으면 조정 선택지를 함께 낸다 — 명세 §15")
+    void skipStep_Exhausted_OffersAdjustments() {
+        Plan plan = storedPlan();
+        when(planAccessService.requirePlanOwner(USER_ID, PLAN_ID)).thenReturn(plan);
+        when(planStepExecutionService.previewSkip(any(), anyInt(), any()))
+                .thenReturn(new PlanStepExecutionService.SkipPreview(
+                        2, 1000.0, 0.0, 3000.0, 0, true));
+
+        StepSkipResponse data = controller.skipStep(USER_ID, PLAN_ID.toString(), 2).data();
+
+        assertThat(data.adjustmentOptions()).containsExactly(
+                "CHANGE_ROUND_BUDGET", "CHANGE_TARGET_AMOUNT", "CHANGE_TARGET_DATE", "PAUSE_PLAN");
+    }
+
+    @Test
+    @DisplayName("모든 엔드포인트가 소유자를 먼저 검증한다 — 이슈 #50 회귀 방지")
+    void allEndpointsVerifyOwner() {
+        when(planAccessService.requireGoalOwner(USER_ID, GOAL_ID))
+                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
+        when(planAccessService.requirePlanOwner(USER_ID, PLAN_ID))
                 .thenThrow(new NotFoundException("계획을 찾을 수 없습니다."));
+        String goalId = GOAL_ID.toString();
+        String planId = PLAN_ID.toString();
+        PlanRequest request = deadlineRequest(null);
+        StepCompleteRequest completeRequest = new StepCompleteRequest(1.0, null, null, null);
 
-        String id = planId.toString();
-        assertThatThrownBy(() -> controller.skipStep(userId, id, 1))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessageContaining("계획을 찾을 수 없습니다");
-        verifyNoInteractions(planStepExecutionService);
-    }
-
-    // ── 소유자 격리 (이슈 #50) ──────────────────────────────────────────
-    // 이전에는 소유자 검증이 전혀 없어 goalId/planId 만 알면 남의 계획을 읽고 조작할 수 있었다.
-
-    @Test
-    @DisplayName("preview 는 남의 목표면 404 를 던지고 미리보기 계산을 하지 않는다")
-    void previewRejectsForeignGoal() {
-        when(planAccessService.requireGoalOwner(userId, goalId))
-                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
-        PlanPreviewRequest request = new PlanPreviewRequest(goalId.toString(), 100000L, 0.8, 4);
-
-        assertThatThrownBy(() -> controller.preview(userId, request))
+        assertThatThrownBy(() -> controller.createPlan(USER_ID, goalId, request))
                 .isInstanceOf(NotFoundException.class);
-        verifyNoInteractions(planPreviewService, planPreviewResponseMapper);
-    }
-
-    @Test
-    @DisplayName("createPlan 은 남의 목표면 404 를 던지고 계획을 저장하지 않는다")
-    void createPlanRejectsForeignGoal() {
-        when(planAccessService.requireGoalOwner(userId, goalId))
-                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
-        String id = goalId.toString();
-        PlanCreateRequest request = new PlanCreateRequest(100000L, 0.8, 4);
-
-        assertThatThrownBy(() -> controller.createPlan(userId, id, request))
+        assertThatThrownBy(() -> controller.listPlanVersions(USER_ID, goalId))
                 .isInstanceOf(NotFoundException.class);
-        verifyNoInteractions(planConfirmService);
-    }
-
-    @Test
-    @DisplayName("listPlanVersions 는 남의 목표면 404 를 던지고 이력을 읽지 않는다")
-    void listPlanVersionsRejectsForeignGoal() {
-        when(planAccessService.requireGoalOwner(userId, goalId))
-                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
-        String id = goalId.toString();
-
-        assertThatThrownBy(() -> controller.listPlanVersions(userId, id))
+        assertThatThrownBy(() -> controller.getActivePlan(USER_ID, goalId))
                 .isInstanceOf(NotFoundException.class);
-        verifyNoInteractions(planRepository);
-    }
-
-    @Test
-    @DisplayName("getActivePlan 은 남의 목표면 404 를 던지고 활성 계획을 읽지 않는다")
-    void getActivePlanRejectsForeignGoal() {
-        when(planAccessService.requireGoalOwner(userId, goalId))
-                .thenThrow(new NotFoundException("목표를 찾을 수 없습니다."));
-        String id = goalId.toString();
-
-        assertThatThrownBy(() -> controller.getActivePlan(userId, id))
+        assertThatThrownBy(() -> controller.getPlan(USER_ID, planId))
                 .isInstanceOf(NotFoundException.class);
-        verifyNoInteractions(planRepository);
-    }
-
-    @Test
-    @DisplayName("completeStep 은 남의 계획이면 404 를 던지고 회차를 완료하지 않는다")
-    void completeStepRejectsForeignPlan() {
-        when(planAccessService.requirePlanOwner(userId, planId))
-                .thenThrow(new NotFoundException("계획을 찾을 수 없습니다."));
-        String id = planId.toString();
-        StepCompleteRequest request = new StepCompleteRequest(2500.0, 1350.0);
-
-        assertThatThrownBy(() -> controller.completeStep(userId, id, 1, request))
+        assertThatThrownBy(() -> controller.completeStep(USER_ID, planId, 1, completeRequest))
                 .isInstanceOf(NotFoundException.class);
-        verifyNoInteractions(planStepExecutionService);
-    }
-    // ── Route 강등 (요구사항 v2 §4.12 미확정, 명세 v2 §6) ──────────────────
-    // route.enabled 기본값은 false 다. 확정되지 않은 수치(버킷 하한 · 분할 회차 ·
-    // 몬테카를로 · 달성 확률)가 API 로 새어 나가지 않도록 6개 전부 501 로 막고,
-    // 소유자 검증·계산 서비스에 진입조차 하지 않는다.
+        assertThatThrownBy(() -> controller.skipStep(USER_ID, planId, 1))
+                .isInstanceOf(NotFoundException.class);
 
-    @Test
-    @DisplayName("route.enabled=false 면 preview 는 501 이고 계산에 진입하지 않는다")
-    void previewReturns501WhenRouteDisabled() {
-        PlanPreviewRequest request = new PlanPreviewRequest(goalId.toString(), 100000L, 0.8, 4);
-
-        assertThatThrownBy(() -> disabledController.preview(userId, request))
-                .isInstanceOf(NotImplementedException.class);
-        verifyNoInteractions(planAccessService, planPreviewService, planPreviewResponseMapper);
+        verifyNoInteractions(planConfirmService, planStepExecutionService);
     }
 
     @Test
-    @DisplayName("route.enabled=false 면 createPlan 은 501 이고 계획을 저장하지 않는다")
-    void createPlanReturns501WhenRouteDisabled() {
-        String id = goalId.toString();
-        PlanCreateRequest request = new PlanCreateRequest(100000L, 0.8, 4);
-
-        assertThatThrownBy(() -> disabledController.createPlan(userId, id, request))
-                .isInstanceOf(NotImplementedException.class);
-        verifyNoInteractions(planAccessService, planConfirmService, planStepRepository);
-    }
-
-    @Test
-    @DisplayName("route.enabled=false 면 listPlanVersions 는 501 이다")
-    void listPlanVersionsReturns501WhenRouteDisabled() {
-        String id = goalId.toString();
-
-        assertThatThrownBy(() -> disabledController.listPlanVersions(userId, id))
-                .isInstanceOf(NotImplementedException.class);
-        verifyNoInteractions(planAccessService, planRepository);
-    }
-
-    @Test
-    @DisplayName("route.enabled=false 면 getActivePlan 은 501 이다")
-    void getActivePlanReturns501WhenRouteDisabled() {
-        String id = goalId.toString();
-
-        assertThatThrownBy(() -> disabledController.getActivePlan(userId, id))
-                .isInstanceOf(NotImplementedException.class);
-        verifyNoInteractions(planAccessService, planRepository);
-    }
-
-    @Test
-    @DisplayName("route.enabled=false 면 completeStep 은 501 이고 회차를 완료하지 않는다")
-    void completeStepReturns501WhenRouteDisabled() {
-        String id = planId.toString();
-        StepCompleteRequest request = new StepCompleteRequest(2500.0, 1350.0);
-
-        assertThatThrownBy(() -> disabledController.completeStep(userId, id, 1, request))
-                .isInstanceOf(NotImplementedException.class);
-        verifyNoInteractions(planAccessService, planStepExecutionService);
-    }
-
-    @Test
-    @DisplayName("route.enabled=false 면 skipStep 은 501 이고 재분배를 계산하지 않는다")
-    void skipStepReturns501WhenRouteDisabled() {
-        String id = planId.toString();
-
-        assertThatThrownBy(() -> disabledController.skipStep(userId, id, 2))
-                .isInstanceOf(NotImplementedException.class);
-        verifyNoInteractions(planAccessService, planStepExecutionService);
+    @DisplayName("의존이 null 이면 생성을 거부한다")
+    void nullDependencies_Throw() {
+        assertThatThrownBy(() -> new PlanController(
+                null, planRepository, planStepRepository, planCalculationService,
+                planConfirmService, planStepExecutionService, planAllocationGuard))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PlanController(
+                planAccessService, null, planStepRepository, planCalculationService,
+                planConfirmService, planStepExecutionService, planAllocationGuard))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PlanController(
+                planAccessService, planRepository, null, planCalculationService,
+                planConfirmService, planStepExecutionService, planAllocationGuard))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PlanController(
+                planAccessService, planRepository, planStepRepository, null,
+                planConfirmService, planStepExecutionService, planAllocationGuard))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PlanController(
+                planAccessService, planRepository, planStepRepository, planCalculationService,
+                null, planStepExecutionService, planAllocationGuard))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PlanController(
+                planAccessService, planRepository, planStepRepository, planCalculationService,
+                planConfirmService, null, planAllocationGuard))
+                .isInstanceOf(NullPointerException.class);
+        assertThatThrownBy(() -> new PlanController(
+                planAccessService, planRepository, planStepRepository, planCalculationService,
+                planConfirmService, planStepExecutionService, null))
+                .isInstanceOf(NullPointerException.class);
     }
 }

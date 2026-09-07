@@ -48,6 +48,35 @@ public class PlanStep {
     @Column(nullable = false)
     private String status;
 
+    /** 정기형 회차의 원화 예산 — 정기형은 외화 금액이 아니라 예산이 고정된다 (명세 §10.3). */
+    @Column(name = "budget_krw")
+    private Long budgetKrw;
+
+    /** 계획 시점의 기준 환율 (외화 1단위당 원화). 회차별 비용 범위의 근거다 (명세 §11.4). */
+    @Column(name = "base_rate")
+    private Double baseRate;
+
+    @Column(name = "low_cost_krw")
+    private Long lowCostKrw;
+
+    @Column(name = "high_cost_krw")
+    private Long highCostKrw;
+
+    /** 실제 적용된 환율 (명세 §14). */
+    @Column(name = "executed_rate")
+    private Double executedRate;
+
+    /** 실제 실행 날짜 (명세 §14). */
+    @Column(name = "executed_date")
+    private LocalDate executedDate;
+
+    /**
+     * 완료 요청의 멱등 키 (명세 §14·§21-12).
+     * 같은 키로 재전송된 완료 요청은 두 번 반영되지 않는다.
+     */
+    @Column(name = "execution_key")
+    private String executionKey;
+
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
@@ -99,36 +128,104 @@ public class PlanStep {
         return status;
     }
 
+    public Long getBudgetKrw() {
+        return budgetKrw;
+    }
+
+    public Double getBaseRate() {
+        return baseRate;
+    }
+
+    public Long getLowCostKrw() {
+        return lowCostKrw;
+    }
+
+    public Long getHighCostKrw() {
+        return highCostKrw;
+    }
+
+    public Double getExecutedRate() {
+        return executedRate;
+    }
+
+    public LocalDate getExecutedDate() {
+        return executedDate;
+    }
+
+    public String getExecutionKey() {
+        return executionKey;
+    }
+
+    /**
+     * 계획 시점의 회차별 비용 근거를 기록한다 (명세 §11.4).
+     *
+     * @param budgetKrw    정기형 회차 예산 (마감형은 null)
+     * @param baseRate     기준 환율 (외화 1단위당 원화)
+     * @param lowCostKrw   환율 하단 기준 비용
+     * @param highCostKrw  환율 상단 기준 비용
+     */
+    public void recordCostBasis(Long budgetKrw, Double baseRate, Long lowCostKrw, Long highCostKrw) {
+        this.budgetKrw = budgetKrw;
+        this.baseRate = baseRate;
+        this.lowCostKrw = lowCostKrw;
+        this.highCostKrw = highCostKrw;
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
 
     /**
-     * 회차 완료 기록. pending 상태에서만 완료로 전이할 수 있다 — 이미 completed/skipped 인 회차를
-     * 다시 완료 처리하면 executed_amount 가 덮어써지거나 skipped 이력이 사라지므로 막는다.
+     * 회차 완료 기록. 미실행(scheduled·due) 회차만 완료로 전이할 수 있다 — 이미
+     * completed/skipped 인 회차를 다시 완료 처리하면 executed_amount 가 덮어써지거나 skipped
+     * 이력이 사라지므로 막는다.
      *
      * @param executedAmount 실제 실행한 외화 금액
-     * @throws IllegalStateException 현재 상태가 pending 이 아닌 경우
+     * @throws IllegalStateException 이미 완료·건너뛴 회차인 경우
      */
     public void markAsCompleted(double executedAmount) {
-        requireStatusIsPending("완료");
+        requireStatusIsOpen("완료");
         this.executedAmount = executedAmount;
         this.status = PlanStepStatus.COMPLETED;
     }
 
     /**
-     * 회차 건너뛰기 표시. pending 상태에서만 건너뛸 수 있다 — 이미 completed 인 회차를 건너뛰면
-     * 실행 기록이 사라지고, 이미 skipped 인 회차를 다시 건너뛰면 부담 재분배가 중복 적용된다.
+     * 실행 결과를 함께 기록하며 회차를 완료한다 (명세 §14).
      *
-     * @throws IllegalStateException 현재 상태가 pending 이 아닌 경우
+     * @param executedAmount 실제 확보한 외화 금액
+     * @param executedRate   실제 적용된 환율
+     * @param executedDate   실행 날짜
+     * @param executionKey   멱등 키. 같은 키의 재요청은 두 번 반영되지 않는다 (§21-12)
+     * @throws IllegalStateException 이미 완료·건너뛴 회차인 경우
+     */
+    public void markAsCompleted(
+            double executedAmount, Double executedRate, LocalDate executedDate, String executionKey) {
+        markAsCompleted(executedAmount);
+        this.executedRate = executedRate;
+        this.executedDate = executedDate;
+        this.executionKey = executionKey;
+    }
+
+    /**
+     * 회차 건너뛰기 표시. 미실행(scheduled·due) 회차만 건너뛸 수 있다 — 이미 completed 인 회차를
+     * 건너뛰면 실행 기록이 사라지고, 이미 skipped 인 회차를 다시 건너뛰면 부담 재분배가
+     * 중복 적용된다.
+     *
+     * @throws IllegalStateException 이미 완료·건너뛴 회차인 경우
      */
     public void markAsSkipped() {
-        requireStatusIsPending("건너뛰기");
+        requireStatusIsOpen("건너뛰기");
         this.status = PlanStepStatus.SKIPPED;
     }
 
-    private void requireStatusIsPending(String action) {
-        if (!isPending()) {
+    /** 예정일이 도래했음을 표시한다 (명세 §13.2 {@code SCHEDULED → DUE}). */
+    public void markAsDue() {
+        requireStatusIsOpen("도래");
+        this.status = PlanStepStatus.DUE;
+    }
+
+    private void requireStatusIsOpen(String action) {
+        if (!isOpen()) {
             throw new IllegalStateException(
                     "이미 " + status + " 상태인 회차는 " + action + " 처리할 수 없습니다: seq=" + seq);
         }
@@ -144,12 +241,12 @@ public class PlanStep {
     }
 
     /**
-     * 회차가 미완료 상태인지 확인.
+     * 아직 실행되지 않은 회차인지 확인. 완료·건너뛰기의 출발점이다.
      *
-     * @return pending 상태면 true
+     * @return scheduled 또는 due 상태면 true
      */
-    public boolean isPending() {
-        return PlanStepStatus.PENDING.equals(status);
+    public boolean isOpen() {
+        return PlanStepStatus.SCHEDULED.equals(status) || PlanStepStatus.DUE.equals(status);
     }
 
     /**

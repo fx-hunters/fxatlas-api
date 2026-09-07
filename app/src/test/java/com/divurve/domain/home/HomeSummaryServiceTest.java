@@ -19,7 +19,6 @@ import com.divurve.domain.market.MarketRegimeService.AnomalyView;
 import com.divurve.domain.market.MarketRegimeService.GuidanceView;
 import com.divurve.domain.market.MarketRegimeService.MarketRegimeView;
 import com.divurve.domain.market.MarketRegimeService;
-import com.divurve.domain.route.RouteFeatureFlag;
 import com.divurve.domain.settings.RiskProfileService;
 import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.user.UserRepository;
@@ -72,7 +71,7 @@ class HomeSummaryServiceTest {
     void setUp() {
         service = new HomeSummaryService(
                 userRepository, xrayService, riskProfileService, forecastService,
-                marketRegimeService, goalService, new RouteFeatureFlag(false), CLOCK);
+                marketRegimeService, goalService, CLOCK);
     }
 
     private void stubUserExists() {
@@ -226,27 +225,7 @@ class HomeSummaryServiceTest {
     }
 
     @Test
-    void getSummary_route_비활성화면_goals_route가_route_pending이고_routeEnabled는_false다() {
-        stubUserExists();
-        when(marketRegimeService.getRegime()).thenReturn(regimeView("normal", "normal"));
-        when(xrayService.getPortfolio(userId)).thenReturn(portfolioWithoutFx());
-        when(riskProfileService.getRiskProfile(userId)).thenReturn(riskProfileNotMeasured());
-        when(forecastService.getForecast(userId, "USDKRW", ForecastService.DEFAULT_HORIZON_DAYS))
-                .thenReturn(forecastView());
-        when(forecastService.getEvents()).thenReturn(List.of());
-
-        HomeSummaryService.HomeSummaryView view = service.getSummary(userId);
-
-        assertThat(view.blocks().get(3).state()).isEqualTo("route_pending");
-        assertThat(view.goalsRoute().routeEnabled()).isFalse();
-        assertThat(view.goalsRoute().activeGoals()).isEmpty();
-    }
-
-    @Test
-    void getSummary_route_활성화면_목표_목록을_조회한다() {
-        service = new HomeSummaryService(
-                userRepository, xrayService, riskProfileService, forecastService,
-                marketRegimeService, goalService, new RouteFeatureFlag(true), CLOCK);
+    void getSummary_goals_route는_목표_목록을_조회한다() {
         stubUserExists();
         when(marketRegimeService.getRegime()).thenReturn(regimeView("normal", "normal"));
         when(xrayService.getPortfolio(userId)).thenReturn(portfolioWithoutFx());
@@ -263,16 +242,12 @@ class HomeSummaryServiceTest {
         HomeSummaryService.HomeSummaryView view = service.getSummary(userId);
 
         assertThat(view.blocks().get(3).state()).isEqualTo("filled");
-        assertThat(view.goalsRoute().routeEnabled()).isTrue();
         assertThat(view.goalsRoute().activeGoals()).hasSize(1);
         assertThat(view.goalsRoute().activeGoals().get(0).name()).isEqualTo("여행자금");
     }
 
     @Test
-    void getSummary_route_활성화면서_목표가_없으면_empty다() {
-        service = new HomeSummaryService(
-                userRepository, xrayService, riskProfileService, forecastService,
-                marketRegimeService, goalService, new RouteFeatureFlag(true), CLOCK);
+    void getSummary_목표가_없으면_goals_route는_empty다() {
         stubUserExists();
         when(marketRegimeService.getRegime()).thenReturn(regimeView("normal", "normal"));
         when(xrayService.getPortfolio(userId)).thenReturn(portfolioWithoutFx());
@@ -285,7 +260,6 @@ class HomeSummaryServiceTest {
         HomeSummaryService.HomeSummaryView view = service.getSummary(userId);
 
         assertThat(view.blocks().get(3).state()).isEqualTo("empty");
-        assertThat(view.goalsRoute().routeEnabled()).isTrue();
         assertThat(view.goalsRoute().activeGoals()).isEmpty();
     }
 

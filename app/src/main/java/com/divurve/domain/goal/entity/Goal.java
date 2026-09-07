@@ -1,5 +1,7 @@
 package com.divurve.domain.goal.entity;
 
+import com.divurve.domain.goal.GoalType;
+import com.divurve.domain.goal.PriorityConstraint;
 import com.divurve.domain.user.entity.User;
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
@@ -69,6 +71,40 @@ public class Goal {
     @Column(nullable = false)
     private String status;
 
+    /** 마감형(deadline) / 정기형(recurring) — 플래너 명세 §4. */
+    @Column(name = "goal_type", nullable = false)
+    private String goalType;
+
+    /**
+     * 이 목표에 배정한 보유 외화 (명세 §5.1).
+     * 보유 외화 전체를 자동으로 목표에 넣지 않는다 — 사용자가 배정 금액을 직접 확인한다.
+     */
+    @Column(name = "allocated_holding_amount", nullable = false)
+    private double allocatedHoldingAmount;
+
+    /**
+     * 상황이 바뀌었을 때 우선 유지할 조건 {@code amount/date/budget} (명세 §5.1·§17).
+     * 시나리오 재계산은 이 값을 기준으로 하며, 시스템이 알리지 않고 임의로 바꾸지 않는다.
+     */
+    @Column(name = "priority_constraint", nullable = false)
+    private String priorityConstraint;
+
+    /** 마감형이 원하는 준비 주기 {@code weekly/biweekly/monthly/custom} (명세 §5.2). */
+    @Column(name = "preferred_cadence")
+    private String preferredCadence;
+
+    /** 정기형 첫 계획 시작일 (명세 §5.3). */
+    @Column(name = "recur_start_date")
+    private LocalDate recurStartDate;
+
+    /** 정기형 점검 기간(개월) — Curve 의 마지막 노드가 "다음 점검"인 지점 (명세 §5.3·§10.3). */
+    @Column(name = "review_horizon_months")
+    private Integer reviewHorizonMonths;
+
+    /** ETF·외화예금 등 정기형 자금의 사용 목적 (명세 §5.3). */
+    @Column(name = "linked_purpose_name")
+    private String linkedPurposeName;
+
     @Generated(event = EventType.INSERT)
     @Column(name = "created_at", insertable = false, updatable = false)
     private Instant createdAt;
@@ -91,6 +127,13 @@ public class Goal {
         this.budgetPeriod = builder.budgetPeriod;
         this.isSpeculative = builder.isSpeculative;
         this.status = builder.status;
+        this.goalType = builder.goalType;
+        this.allocatedHoldingAmount = builder.allocatedHoldingAmount;
+        this.priorityConstraint = builder.priorityConstraint;
+        this.preferredCadence = builder.preferredCadence;
+        this.recurStartDate = builder.recurStartDate;
+        this.reviewHorizonMonths = builder.reviewHorizonMonths;
+        this.linkedPurposeName = builder.linkedPurposeName;
     }
 
     /** 필드 수가 많아 빌더로 생성한다. id/created_at 은 저장 시점에 DB 가 채운다. */
@@ -113,6 +156,13 @@ public class Goal {
         private String budgetPeriod;
         private boolean isSpeculative;
         private String status;
+        private String goalType = GoalType.DEADLINE;
+        private double allocatedHoldingAmount;
+        private String priorityConstraint = PriorityConstraint.AMOUNT;
+        private String preferredCadence;
+        private LocalDate recurStartDate;
+        private Integer reviewHorizonMonths;
+        private String linkedPurposeName;
 
         private Builder(User owner, String name, String kind, String purpose, String currencyCode) {
             this.owner = owner;
@@ -159,6 +209,41 @@ public class Goal {
 
         public Builder status(String status) {
             this.status = status;
+            return this;
+        }
+
+        public Builder goalType(String goalType) {
+            this.goalType = goalType;
+            return this;
+        }
+
+        public Builder allocatedHoldingAmount(double allocatedHoldingAmount) {
+            this.allocatedHoldingAmount = allocatedHoldingAmount;
+            return this;
+        }
+
+        public Builder priorityConstraint(String priorityConstraint) {
+            this.priorityConstraint = priorityConstraint;
+            return this;
+        }
+
+        public Builder preferredCadence(String preferredCadence) {
+            this.preferredCadence = preferredCadence;
+            return this;
+        }
+
+        public Builder recurStartDate(LocalDate recurStartDate) {
+            this.recurStartDate = recurStartDate;
+            return this;
+        }
+
+        public Builder reviewHorizonMonths(Integer reviewHorizonMonths) {
+            this.reviewHorizonMonths = reviewHorizonMonths;
+            return this;
+        }
+
+        public Builder linkedPurposeName(String linkedPurposeName) {
+            this.linkedPurposeName = linkedPurposeName;
             return this;
         }
 
@@ -223,6 +308,39 @@ public class Goal {
         return status;
     }
 
+    public String getGoalType() {
+        return goalType;
+    }
+
+    public double getAllocatedHoldingAmount() {
+        return allocatedHoldingAmount;
+    }
+
+    public String getPriorityConstraint() {
+        return priorityConstraint;
+    }
+
+    public String getPreferredCadence() {
+        return preferredCadence;
+    }
+
+    public LocalDate getRecurStartDate() {
+        return recurStartDate;
+    }
+
+    public Integer getReviewHorizonMonths() {
+        return reviewHorizonMonths;
+    }
+
+    public String getLinkedPurposeName() {
+        return linkedPurposeName;
+    }
+
+    /** 정기형 목표인지 — Curve 의 마지막 노드가 "다음 점검"이다 (명세 §4·§10.3). */
+    public boolean isRecurring() {
+        return GoalType.RECURRING.equals(goalType);
+    }
+
     public Instant getCreatedAt() {
         return createdAt;
     }
@@ -260,6 +378,16 @@ public class Goal {
     /** 투자성향 플래그를 업데이트한다. */
     public void setSpeculative(boolean isSpeculative) {
         this.isSpeculative = isSpeculative;
+    }
+
+    /** 이 목표에 배정한 보유 외화를 업데이트한다 (명세 §16 "추가 외화 확보"). */
+    public void setAllocatedHoldingAmount(double allocatedHoldingAmount) {
+        this.allocatedHoldingAmount = allocatedHoldingAmount;
+    }
+
+    /** 우선 유지 조건을 업데이트한다. 사용자의 명시적 선택으로만 바뀐다 (명세 §17). */
+    public void setPriorityConstraint(String priorityConstraint) {
+        this.priorityConstraint = priorityConstraint;
     }
 
     /** 테스트용 id 설정 (반사를 사용한다). */

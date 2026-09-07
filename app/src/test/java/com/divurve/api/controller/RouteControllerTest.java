@@ -4,28 +4,35 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.divurve.api.dto.route.RouteContextResponse;
 import com.divurve.common.response.ApiResponse;
+import com.divurve.domain.route.RouteContext;
 import com.divurve.domain.route.RouteContextService;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.ZoneOffset;
+import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 
 /**
- * {@link RouteController} — {@code GET /api/v1/route/context} 는 직렬화만 한다(P).
+ * {@link RouteController} — {@code GET /api/v1/route/context} 는 직렬화만 한다.
+ *
+ * <p>컨트롤러가 값을 바꾸지 않는다는 것과, 채우지 못한 블록이 비어서 내려간다는 것을 본다.
+ * 값을 실제로 모으는 책임은 {@code RouteContextService} 에 있고 그쪽에서 따로 검증한다.
  */
 @DisplayName("RouteController")
 class RouteControllerTest {
 
     private static final Instant FIXED = Instant.parse("2026-09-06T00:00:00Z");
+    private static final UUID USER_ID = UUID.randomUUID();
 
-    private final RouteController controller = new RouteController(
-            new RouteContextService(Clock.fixed(FIXED, ZoneOffset.UTC)));
+    private final RouteContextService routeContextService = Mockito.mock(RouteContextService.class);
+    private final RouteController controller = new RouteController(routeContextService);
 
     @Test
-    @DisplayName("RouteContext 를 data/meta 로 감싸 돌려주고 값은 비어 있다")
+    @DisplayName("채우지 못한 블록은 비어서 내려간다 — 값을 지어내지 않는다")
     void returnsEmptyContextWrappedInDataMeta() {
-        ApiResponse<RouteContextResponse> response = controller.getRouteContext();
+        Mockito.when(routeContextService.getContext(USER_ID)).thenReturn(RouteContext.empty(FIXED));
+
+        ApiResponse<RouteContextResponse> response = controller.getRouteContext(USER_ID);
 
         assertThat(response.meta()).isNotNull();
         assertThat(response.data().asOf()).isEqualTo(FIXED);

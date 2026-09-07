@@ -163,51 +163,6 @@ class PlanCalculatorTest {
     }
 
     @Nested
-    @DisplayName("calculateAchieveProbAfterSkip")
-    class CalculateAchieveProbAfterSkipTest {
-
-        @Test
-        @DisplayName("정상 케이스: 회차 절반 건너뛰면 확률 절반")
-        void normalCase() {
-            double result = PlanCalculator.calculateAchieveProbAfterSkip(0.8, 10, 5);
-            assertEquals(0.4, result, EPSILON); // 0.8 * (5/10) = 0.4
-        }
-
-        @Test
-        @DisplayName("회차 모두 건너뛰면 확률 0.0")
-        void allSkipped() {
-            double result = PlanCalculator.calculateAchieveProbAfterSkip(0.8, 10, 0);
-            assertEquals(0.0, result, EPSILON);
-        }
-
-        @Test
-        @DisplayName("회차 변화 없으면 확률 유지")
-        void noChange() {
-            double result = PlanCalculator.calculateAchieveProbAfterSkip(0.9, 10, 10);
-            assertEquals(0.9, result, EPSILON);
-        }
-
-        @Test
-        @DisplayName("전체 회차가 0이면 0.0 반환")
-        void zeroTotal() {
-            double result = PlanCalculator.calculateAchieveProbAfterSkip(0.8, 0, 5);
-            assertEquals(0.0, result, EPSILON);
-        }
-
-        @ParameterizedTest
-        @CsvSource({
-            "1.0,10,10,1.0",
-            "0.5,10,5,0.25",
-            "0.6,20,10,0.3",
-        })
-        @DisplayName("여러 확률과 회차 조합 검증")
-        void parameterized(double prob, int total, int remaining, double expected) {
-            double result = PlanCalculator.calculateAchieveProbAfterSkip(prob, total, remaining);
-            assertEquals(expected, result, EPSILON);
-        }
-    }
-
-    @Nested
     @DisplayName("generateEqualSplitSchedule")
     class GenerateEqualSplitScheduleTest {
 

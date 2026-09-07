@@ -36,8 +36,8 @@ class PlanRepositoryTest extends RepositoryTestBase {
     @Test
     void findByGoal_Id_는_목표의_모든_계획_버전을_반환한다() {
         Goal goal = newGoal("plan1@divurve.com");
-        planRepository.save(Plan.builder(goal, 1).isActive(false).safeRatio(0.7).splitCount(3).build());
-        planRepository.save(Plan.builder(goal, 2).isActive(true).safeRatio(0.6).splitCount(4).build());
+        planRepository.save(Plan.builder(goal, 1).status(PlanStatus.SUPERSEDED).build());
+        planRepository.save(Plan.builder(goal, 2).status(PlanStatus.ACTIVE).build());
 
         assertThat(planRepository.findByGoal_Id(goal.getId()))
             .extracting(Plan::getVersion)
@@ -45,13 +45,12 @@ class PlanRepositoryTest extends RepositoryTestBase {
     }
 
     @Test
-    void findByGoal_IdAndIsActiveTrue_는_활성_계획만_반환한다() {
+    void findFirstByGoal_IdAndStatus_는_활성_계획만_반환한다() {
         Goal goal = newGoal("plan2@divurve.com");
-        planRepository.save(Plan.builder(goal, 1).isActive(false).safeRatio(0.7).splitCount(3).build());
-        planRepository.save(Plan.builder(goal, 2).isActive(true).safeRatio(0.6).splitCount(4)
-            .opportunityAmount(1000).opportunityTriggerRate(1350.0).reason("변동성 상승").build());
+        planRepository.save(Plan.builder(goal, 1).status(PlanStatus.SUPERSEDED).build());
+        planRepository.save(Plan.builder(goal, 2).status(PlanStatus.ACTIVE).reason("변동성 상승").build());
 
-        assertThat(planRepository.findByGoal_IdAndIsActiveTrue(goal.getId()))
+        assertThat(planRepository.findFirstByGoal_IdAndStatus(goal.getId(), PlanStatus.ACTIVE))
             .isPresent()
             .get()
             .satisfies(p -> {
@@ -63,10 +62,10 @@ class PlanRepositoryTest extends RepositoryTestBase {
     @Test
     void findByPlan_IdOrderBySeqAsc_는_회차를_seq_오름차순으로_반환한다() {
         Goal goal = newGoal("plan3@divurve.com");
-        Plan plan = planRepository.save(Plan.builder(goal, 1).isActive(true).safeRatio(0.7).splitCount(3).build());
-        planStepRepository.save(PlanStep.create(plan, 3, LocalDate.of(2026, 3, 1), 100.0, 0.0, "pending"));
-        planStepRepository.save(PlanStep.create(plan, 1, LocalDate.of(2026, 1, 1), 100.0, 100.0, "done"));
-        planStepRepository.save(PlanStep.create(plan, 2, LocalDate.of(2026, 2, 1), 100.0, 0.0, "pending"));
+        Plan plan = planRepository.save(Plan.builder(goal, 1).status(PlanStatus.ACTIVE).build());
+        planStepRepository.save(PlanStep.create(plan, 3, LocalDate.of(2026, 3, 1), 100.0, 0.0, PlanStepStatus.SCHEDULED));
+        planStepRepository.save(PlanStep.create(plan, 1, LocalDate.of(2026, 1, 1), 100.0, 100.0, PlanStepStatus.COMPLETED));
+        planStepRepository.save(PlanStep.create(plan, 2, LocalDate.of(2026, 2, 1), 100.0, 0.0, PlanStepStatus.SCHEDULED));
 
         assertThat(planStepRepository.findByPlan_IdOrderBySeqAsc(plan.getId()))
             .extracting(PlanStep::getSeq)
