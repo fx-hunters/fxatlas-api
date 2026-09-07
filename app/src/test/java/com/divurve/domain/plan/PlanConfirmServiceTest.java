@@ -18,14 +18,16 @@ import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.plan.entity.Plan;
 import com.divurve.domain.plan.entity.PlanStep;
 import com.divurve.domain.user.entity.User;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.mockito.ArgumentCaptor;
@@ -42,12 +44,17 @@ class PlanConfirmServiceTest {
     private PlanStepRepository planStepRepository;
     private PlanConfirmService service;
 
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 7);
+    private static final Clock CLOCK =
+            Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
+
+
     @BeforeEach
     void setUp() {
         goalRepository = mock(GoalRepository.class);
         planRepository = mock(PlanRepository.class);
         planStepRepository = mock(PlanStepRepository.class);
-        service = new PlanConfirmService(goalRepository, planRepository, planStepRepository);
+        service = new PlanConfirmService(goalRepository, planRepository, planStepRepository, CLOCK);
     }
 
     @Nested
@@ -281,8 +288,8 @@ class PlanConfirmServiceTest {
             // monthlyBudget = 100_000 * 4 = 400_000, safeAmount = 400_000 * 0.8 = 320_000, /4 회차
             assertEquals(80_000.0, savedSteps.get(0).getAmount(), 1e-9);
             assertEquals(1, savedSteps.get(0).getSeq());
-            assertEquals(LocalDate.now(), savedSteps.get(0).getScheduledDate());
-            assertEquals(LocalDate.now().plusDays((365 / 4) * 3L), savedSteps.get(3).getScheduledDate());
+            assertEquals(TODAY, savedSteps.get(0).getScheduledDate());
+            assertEquals(TODAY.plusDays((365 / 4) * 3L), savedSteps.get(3).getScheduledDate());
             assertNotNull(result);
         }
 
@@ -301,7 +308,7 @@ class PlanConfirmServiceTest {
             ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
             verify(planStepRepository, times(4)).save(captor.capture());
             assertEquals(
-                    LocalDate.now().plusDays(365L / 4),
+                    TODAY.plusDays(365L / 4),
                     captor.getAllValues().get(1).getScheduledDate());
         }
 
@@ -328,7 +335,7 @@ class PlanConfirmServiceTest {
             verify(planStepRepository, times(4)).save(captor.capture());
             List<PlanStep> savedSteps = captor.getAllValues();
             assertEquals(
-                    LocalDate.now().plusDays((long) expectedIntervalDays),
+                    TODAY.plusDays((long) expectedIntervalDays),
                     savedSteps.get(1).getScheduledDate());
         }
 

@@ -386,18 +386,28 @@ CREATE TABLE model_runs (
   evaluated_at    TIMESTAMPTZ NOT NULL
 );
 
+-- V14__econ_events.sql (이슈 #74) 로 실제 적용됨. ERD 대비 source_url/fetched_at/source_kind 3컬럼을
+-- 추가했다 — 공식 파서·AI 추출·시연용 예시 데이터의 신뢰도를 섞지 않기 위한 출처 추적 컬럼이다.
 CREATE TABLE econ_events (
   id          UUID PRIMARY KEY DEFAULT gen_random_uuid(),
   event_date  DATE NOT NULL,
   region      TEXT NOT NULL,
   title       TEXT NOT NULL,
-  impact      SMALLINT NOT NULL
+  impact      SMALLINT NOT NULL,
+  source_url  TEXT,                 -- 원문 URL. demo_sample 은 원문이 없어 NULL 허용
+  fetched_at  TIMESTAMPTZ NOT NULL, -- 수집 시각
+  source_kind TEXT NOT NULL,        -- OFFICIAL_PARSER | AI_EXTRACTED | DEMO_SAMPLE (자바 enum name 그대로)
+  CONSTRAINT ck_events_impact CHECK (impact BETWEEN 1 AND 3),
+  CONSTRAINT ck_events_source_kind CHECK (source_kind IN ('OFFICIAL_PARSER', 'AI_EXTRACTED', 'DEMO_SAMPLE')),
+  CONSTRAINT uq_events_date_region_title UNIQUE (event_date, region, title) -- 중복 적재 방지
 );
 CREATE INDEX idx_events_date ON econ_events (event_date);
 
+-- ⚠️ currency_pairs 테이블이 이 레포에 아직 없어(ERD 구축 순서 1단계 미착수) pair_code FK 를 생략했다.
+--    도입 시 별도 마이그레이션에서 FK 를 추가한다(V11 stress_test_runs 의 FK 보류와 같은 방식).
 CREATE TABLE econ_event_pairs (
   event_id   UUID NOT NULL REFERENCES econ_events(id),
-  pair_code  CHAR(6) NOT NULL REFERENCES currency_pairs(pair_code),
+  pair_code  CHAR(6) NOT NULL,
   PRIMARY KEY (event_id, pair_code)
 );
 
@@ -567,7 +577,7 @@ CREATE INDEX idx_audit_action ON audit_logs (action, created_at);
 - **`forecasts`** — 전망. `base_rate`(**L1**, 계산이 읽는 유일 중앙값)·`model_path`(**L2**, 화면 표시 전용)·`p50/p80_lo/hi`(L1, 80% 하단은 기회 버킷 트리거)·`model_version`.
 - **`forecast_factors`** — 전망 동인(L2·참고). `direction`(±1)·`strength`(0~1)·`latest_value`. 화면엔 "참고" 배지+모델 적중률 병기.
 - **`model_runs`** — 모델 성적표. `hit_rate`(L2 성적, ~51%면 그대로 표시)·`mae`·`coverage_80`(L1 성적)·`avg_width`(coverage와 반드시 함께)·`rw_improvement`(음수여도 표시).
-- **`econ_events` + `econ_event_pairs`** — 경제 일정. `event_date`·`region`·`title`·`impact`(1~3), 그리고 이벤트↔통화쌍 매핑(USD 화면에 일본 지표가 뜨는 걸 방지).
+- **`econ_events` + `econ_event_pairs`** — 경제 일정. `event_date`·`region`·`title`·`impact`(1~3), 그리고 이벤트↔통화쌍 매핑(USD 화면에 일본 지표가 뜨는 걸 방지). `source_url`·`fetched_at`·`source_kind`(`OFFICIAL_PARSER`/`AI_EXTRACTED`/`DEMO_SAMPLE`)는 이슈 #74 로 추가된 출처 추적 컬럼 — 공식 파서·AI 추출·시연용 예시 데이터의 신뢰도를 섞지 않기 위함이다. `(event_date, region, title)` 유니크로 중복 적재를 막는다.
 - **`macro_series`** — 거시지표 원계열. `series_code`+`obs_date`·`value`·`data_source`(FRED/ECOS). `factors`가 논리적으로 참조.
 
 ### F. Stress Test (1) — 신규 도메인

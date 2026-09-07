@@ -21,7 +21,9 @@ import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.simulate.MonteCarloSimulator;
 import com.divurve.engine.split.SplitVarianceReducer;
 import java.math.BigDecimal;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 import java.util.UUID;
 import org.assertj.core.data.Offset;
@@ -63,6 +65,10 @@ class PlanPreviewServiceTest {
     private final MonteCarloSimulator monteCarloSimulator = new MonteCarloSimulator();
     private final ConcentrationCalculator concentrationCalculator = new ConcentrationCalculator();
 
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 7);
+    private static final Clock CLOCK =
+            Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
+
     private final UUID goalId = UUID.randomUUID();
 
     @BeforeEach
@@ -74,7 +80,7 @@ class PlanPreviewServiceTest {
 
     private PlanPreviewService service() {
         return new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates);
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates, CLOCK);
     }
 
     private Goal.Builder goalBuilder(String purpose) {
@@ -98,7 +104,7 @@ class PlanPreviewServiceTest {
 
     @Test
     void 안전비율과_분할횟수를_생략하면_권장값_070_과_4회로_미리보기를_만든다() {
-        LocalDate today = LocalDate.now();
+        LocalDate today = TODAY;
         givenGoal(goalBuilder("TRAVEL").recurInterval("MONTHLY").build());
 
         PlanPreviewInfo info = service().generatePreview(goalId.toString(), WEEKLY_BUDGET_KRW, null, null);
@@ -405,37 +411,37 @@ class PlanPreviewServiceTest {
     @Test
     void 협력자가_null_이면_생성_시점에_실패한다() {
         assertThatThrownBy(() -> new PlanPreviewService(null, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("GoalRepository");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, null, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("BucketAllocator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, null,
-                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
+                costCalculator, monteCarloSimulator, concentrationCalculator, perUnitFxRates, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("SplitVarianceReducer");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                null, monteCarloSimulator, concentrationCalculator, perUnitFxRates))
+                null, monteCarloSimulator, concentrationCalculator, perUnitFxRates, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("CostCalculator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, null, concentrationCalculator, perUnitFxRates))
+                costCalculator, null, concentrationCalculator, perUnitFxRates, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("MonteCarloSimulator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, null, perUnitFxRates))
+                costCalculator, monteCarloSimulator, null, perUnitFxRates, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("ConcentrationCalculator");
 
         assertThatThrownBy(() -> new PlanPreviewService(goalRepository, bucketAllocator, splitVarianceReducer,
-                costCalculator, monteCarloSimulator, concentrationCalculator, null))
+                costCalculator, monteCarloSimulator, concentrationCalculator, null, CLOCK))
                 .isInstanceOf(NullPointerException.class)
                 .hasMessageContaining("PerUnitFxRates");
     }

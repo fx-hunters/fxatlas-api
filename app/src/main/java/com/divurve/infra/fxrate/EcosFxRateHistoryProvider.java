@@ -3,7 +3,6 @@ package com.divurve.infra.fxrate;
 import com.divurve.common.architecture.ExternalAdapter;
 import com.divurve.domain.port.FxRateHistoryProvider;
 import java.time.LocalDate;
-import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.List;
@@ -28,7 +27,6 @@ public class EcosFxRateHistoryProvider implements FxRateHistoryProvider {
     private static final Logger log = LoggerFactory.getLogger(EcosFxRateHistoryProvider.class);
 
     private static final DateTimeFormatter YYYYMMDD = DateTimeFormatter.ofPattern("yyyyMMdd");
-    private static final ZoneId KST = ZoneId.of("Asia/Seoul");
 
     private final RestClient restClient;
     private final EcosProperties props;
