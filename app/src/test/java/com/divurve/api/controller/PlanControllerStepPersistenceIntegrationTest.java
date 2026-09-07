@@ -63,7 +63,8 @@ class PlanControllerStepPersistenceIntegrationTest extends RepositoryTestBase {
     void setUp() {
         PlanAccessService planAccessService = new PlanAccessService(goalRepository, planRepository);
         PlanConfirmService planConfirmService =
-                new PlanConfirmService(goalRepository, planRepository, planStepRepository);
+                new PlanConfirmService(goalRepository, planRepository, planStepRepository,
+                        java.time.Clock.systemDefaultZone());
         PlanStepExecutionService planStepExecutionService =
                 new PlanStepExecutionService(planRepository, planStepRepository);
         // preview 는 이 테스트 범위 밖이라 실제 계산기 없이 mock 으로 대체한다.
