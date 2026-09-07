@@ -5,9 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
+import com.divurve.domain.fx.PerUnitFxRates;
 import com.divurve.domain.goal.entity.Goal;
 import com.divurve.domain.holding.DepositService;
 import com.divurve.domain.holding.HoldingService;
@@ -15,8 +18,12 @@ import com.divurve.domain.holding.entity.Deposit;
 import com.divurve.domain.holding.entity.Holding;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
+import com.divurve.engine.bucket.BucketAllocator;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -31,6 +38,10 @@ import org.mockito.junit.jupiter.MockitoExtension;
 @DisplayName("GoalService 테스트")
 class GoalServiceTest {
 
+    /** 검증 기준 "오늘" — target_date 과거 여부 판정을 결정적으로 만든다. */
+    private static final Clock FIXED_CLOCK =
+            Clock.fixed(Instant.parse("2026-09-07T00:00:00Z"), ZoneOffset.UTC);
+
     @Mock
     private GoalRepository goalRepository;
 
@@ -44,20 +55,33 @@ class GoalServiceTest {
     private DepositService depositService;
 
     @Mock
+    private PerUnitFxRates perUnitFxRates;
+
+    @Mock
     private User owner;
+
+    /** 순수 계산기라 목업 없이 실제 인스턴스를 쓴다 — 목적 코드 판정도 실제 규칙 그대로 검증된다. */
+    private final BucketAllocator bucketAllocator = new BucketAllocator();
 
     private GoalService goalService;
     private UUID ownerId;
 
     @BeforeEach
     void setUp() {
-        goalService = new GoalService(goalRepository, userRepository, holdingService, depositService);
+        goalService = new GoalService(goalRepository, userRepository, holdingService, depositService,
+                perUnitFxRates, bucketAllocator, FIXED_CLOCK);
         ownerId = UUID.randomUUID();
+    }
+
+    /** 지원 통화(예 USD)의 정상 요청 흐름에서 공통으로 필요한 스텁. */
+    private void givenSupportedCurrency(String currencyCode) {
+        when(perUnitFxRates.find(currencyCode)).thenReturn(Optional.of(BigDecimal.ONE));
     }
 
     @Test
     @DisplayName("목표 생성 성공")
     void createGoalSuccess() {
+        givenSupportedCurrency("USD");
         when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner));
         when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> {
             Goal goal = invocation.getArgument(0);
@@ -68,7 +92,7 @@ class GoalServiceTest {
                 ownerId,
                 "USD 목표",
                 "deadline",
-                "travel",
+                "TRAVEL",
                 "USD",
                 10000.0,
                 LocalDate.of(2026, 12, 31),
@@ -88,13 +112,112 @@ class GoalServiceTest {
     @Test
     @DisplayName("목표 생성 시 사용자 미존재 예외")
     void createGoalUserNotFound() {
+        givenSupportedCurrency("USD");
         when(userRepository.findById(ownerId)).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> goalService.create(
+                ownerId, "USD 목표", "deadline", "TRAVEL", "USD",
+                10000.0, LocalDate.of(2026, 12, 31), null, 0, "KRW", null, false))
+                .isInstanceOf(NotFoundException.class)
+                .hasMessage("사용자를 찾을 수 없습니다.");
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 환율 조회가 안 되는 통화면 400 (이슈 #77) — GBP 는 마스터 표시 목록엔 있지만 ECOS 미고시다")
+    void createGoalUnsupportedCurrencyRejected() {
+        when(perUnitFxRates.find("GBP")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> goalService.create(
+                ownerId, "GBP 목표", "deadline", "TRAVEL", "GBP",
+                10000.0, LocalDate.of(2026, 12, 31), null, 0, "KRW", null, false))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "currency_code");
+        verifyNoInteractions(userRepository, goalRepository);
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 존재하지 않는 통화코드도 400 으로 막힌다")
+    void createGoalUnknownCurrencyCodeRejected() {
+        when(perUnitFxRates.find("XYZ")).thenReturn(Optional.empty());
+
+        assertThatThrownBy(() -> goalService.create(
+                ownerId, "XYZ 목표", "deadline", "TRAVEL", "XYZ",
+                10000.0, LocalDate.of(2026, 12, 31), null, 0, "KRW", null, false))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "currency_code");
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 target_amount 가 0 이면 400")
+    void createGoalZeroAmountRejected() {
+        assertThatThrownBy(() -> goalService.create(
+                ownerId, "USD 목표", "deadline", "TRAVEL", "USD",
+                0.0, LocalDate.of(2026, 12, 31), null, 0, "KRW", null, false))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "target_amount");
+        verifyNoInteractions(userRepository, goalRepository, perUnitFxRates);
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 target_amount 가 음수이면 400")
+    void createGoalNegativeAmountRejected() {
+        assertThatThrownBy(() -> goalService.create(
+                ownerId, "USD 목표", "deadline", "TRAVEL", "USD",
+                -500.0, LocalDate.of(2026, 12, 31), null, 0, "KRW", null, false))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "target_amount");
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 BucketAllocator 가 모르는 목적 코드면 400 — 계획 미리보기까지 가지 않고 앞당겨 막는다")
+    void createGoalUnknownPurposeRejected() {
+        givenSupportedCurrency("USD");
 
         assertThatThrownBy(() -> goalService.create(
                 ownerId, "USD 목표", "deadline", "travel", "USD",
                 10000.0, LocalDate.of(2026, 12, 31), null, 0, "KRW", null, false))
-                .isInstanceOf(NotFoundException.class)
-                .hasMessage("사용자를 찾을 수 없습니다.");
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "purpose");
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 target_date 가 과거면 400")
+    void createGoalPastTargetDateRejected() {
+        givenSupportedCurrency("USD");
+
+        assertThatThrownBy(() -> goalService.create(
+                ownerId, "USD 목표", "deadline", "TRAVEL", "USD",
+                10000.0, LocalDate.of(2026, 9, 5), null, 0, "KRW", null, false))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "target_date");
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 target_date 가 오늘이면 허용한다")
+    void createGoalTodayTargetDateAllowed() {
+        givenSupportedCurrency("USD");
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner));
+        when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Goal result = goalService.create(
+                ownerId, "USD 목표", "deadline", "TRAVEL", "USD",
+                10000.0, LocalDate.of(2026, 9, 7), null, 0, "KRW", null, false);
+
+        assertThat(result.getTargetDate()).isEqualTo(LocalDate.of(2026, 9, 7));
+    }
+
+    @Test
+    @DisplayName("목표 생성 시 target_date 가 없으면 과거 여부 검증을 건너뛰고 허용한다")
+    void createGoalWithoutTargetDateAllowed() {
+        givenSupportedCurrency("USD");
+        when(userRepository.findById(ownerId)).thenReturn(Optional.of(owner));
+        when(goalRepository.save(any(Goal.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        Goal result = goalService.create(
+                ownerId, "USD 목표", "deadline", "TRAVEL", "USD",
+                10000.0, null, null, 0, "KRW", null, false);
+
+        assertThat(result.getTargetDate()).isNull();
     }
 
     @Test
@@ -269,6 +392,60 @@ class GoalServiceTest {
 
         assertThat(result.getName()).isEqualTo("USD 목표");
         assertThat(result.getTargetAmount()).isEqualTo(20000.0);
+    }
+
+    @Test
+    @DisplayName("목표 수정 시 이름을 공백으로 바꾸려 하면 400")
+    void updateGoalBlankNameRejected() {
+        UUID goalId = UUID.randomUUID();
+        Goal goal = Goal.builder(owner, "USD 목표", "deadline", "travel", "USD")
+                .targetAmount(10000.0)
+                .status("active")
+                .build();
+
+        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+        when(owner.getId()).thenReturn(ownerId);
+
+        assertThatThrownBy(() -> goalService.update(
+                ownerId, goalId, "   ", null, null, null, null, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "name");
+    }
+
+    @Test
+    @DisplayName("목표 수정 시 target_date 를 과거로 바꾸려 하면 400")
+    void updateGoalPastTargetDateRejected() {
+        UUID goalId = UUID.randomUUID();
+        Goal goal = Goal.builder(owner, "USD 목표", "deadline", "travel", "USD")
+                .targetAmount(10000.0)
+                .status("active")
+                .build();
+
+        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+        when(owner.getId()).thenReturn(ownerId);
+
+        assertThatThrownBy(() -> goalService.update(
+                ownerId, goalId, null, null, LocalDate.of(2026, 9, 5), null, null, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "target_date");
+    }
+
+    @Test
+    @DisplayName("목표 수정 시 target_amount 를 0 이하로 바꾸려 하면 400")
+    void updateGoalNonPositiveAmountRejected() {
+        UUID goalId = UUID.randomUUID();
+        Goal goal = Goal.builder(owner, "USD 목표", "deadline", "travel", "USD")
+                .targetAmount(10000.0)
+                .status("active")
+                .build();
+
+        when(goalRepository.findById(goalId)).thenReturn(Optional.of(goal));
+        when(owner.getId()).thenReturn(ownerId);
+
+        assertThatThrownBy(() -> goalService.update(
+                ownerId, goalId, null, 0.0, null, null, null, null))
+                .isInstanceOf(InvalidRequestException.class)
+                .hasFieldOrPropertyWithValue("field", "target_amount");
     }
 
     @Test

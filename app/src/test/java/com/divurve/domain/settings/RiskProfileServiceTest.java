@@ -18,7 +18,9 @@ import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
 import com.divurve.engine.riskprofile.DetailDiagnosisMapper;
 import com.divurve.engine.riskprofile.RiskProfileScorer;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.Optional;
@@ -52,13 +54,17 @@ class RiskProfileServiceTest {
     @Mock
     private UserSettingsService userSettingsService;
 
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 7);
+    private static final Clock CLOCK =
+            Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
+
     private final UUID userId = UUID.randomUUID();
     private final User user = User.createDemo("me@divurve.com", "나");
 
     private RiskProfileService service() {
         return new RiskProfileService(
                 riskProfileRepository, userRepository, userSettingsService,
-                new RiskProfileScorer(), new DetailDiagnosisMapper());
+                new RiskProfileScorer(), new DetailDiagnosisMapper(), CLOCK);
     }
 
     private void saveEchoes() {
@@ -143,7 +149,7 @@ class RiskProfileServiceTest {
         assertThat(view.status()).isEqualTo(RiskProfileService.STATUS_SIMPLE_DONE);
         assertThat(view.riskType()).isEqualTo(RiskProfileScorer.BALANCED);
         assertThat(view.score()).isEqualTo(4);
-        assertThat(view.diagnosedOn()).isEqualTo(LocalDate.now());
+        assertThat(view.diagnosedOn()).isEqualTo(TODAY);
 
         ArgumentCaptor<RiskProfile> captor = ArgumentCaptor.forClass(RiskProfile.class);
         verify(riskProfileRepository).save(captor.capture());

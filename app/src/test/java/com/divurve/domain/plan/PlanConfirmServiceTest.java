@@ -12,16 +12,29 @@ import com.divurve.domain.plan.entity.Plan;
 import com.divurve.domain.plan.entity.PlanStep;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
+<<<<<<< HEAD
 import com.divurve.engine.planner.PlannerPolicy;
 import jakarta.persistence.EntityManager;
 import java.math.BigDecimal;
 import java.time.Instant;
+=======
+import java.time.Clock;
+>>>>>>> develop
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.UUID;
 import org.junit.jupiter.api.DisplayName;
+<<<<<<< HEAD
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+=======
+import org.junit.jupiter.api.Nested;
+import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
+import org.mockito.ArgumentCaptor;
+>>>>>>> develop
 
 /**
  * {@link PlanConfirmService} — 계획 저장과 버전 관리 (플래너 명세 §11·§18·§21-10).
@@ -38,6 +51,7 @@ class PlanConfirmServiceTest extends RepositoryTestBase {
     @Autowired
     private PlanStepRepository planStepRepository;
 
+<<<<<<< HEAD
     @Autowired
     private GoalRepository goalRepository;
 
@@ -49,6 +63,19 @@ class PlanConfirmServiceTest extends RepositoryTestBase {
 
     private PlanConfirmService service() {
         return new PlanConfirmService(goalRepository, planRepository, planStepRepository);
+=======
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 7);
+    private static final Clock CLOCK =
+            Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
+
+
+    @BeforeEach
+    void setUp() {
+        goalRepository = mock(GoalRepository.class);
+        planRepository = mock(PlanRepository.class);
+        planStepRepository = mock(PlanStepRepository.class);
+        service = new PlanConfirmService(goalRepository, planRepository, planStepRepository, CLOCK);
+>>>>>>> develop
     }
 
     private Goal newGoal() {
@@ -125,10 +152,24 @@ class PlanConfirmServiceTest extends RepositoryTestBase {
         assertThat(found.getPlanEndDate()).isEqualTo(LocalDate.of(2026, 12, 21));
     }
 
+<<<<<<< HEAD
     @Test
     @DisplayName("회차를 seq 순서로 저장한다 — 명세 §11.4")
     void savesStepsInOrder() {
         Goal goal = newGoal();
+=======
+            ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
+            verify(planStepRepository, times(4)).save(captor.capture());
+            List<PlanStep> savedSteps = captor.getAllValues();
+            assertEquals(4, savedSteps.size());
+            // monthlyBudget = 100_000 * 4 = 400_000, safeAmount = 400_000 * 0.8 = 320_000, /4 회차
+            assertEquals(80_000.0, savedSteps.get(0).getAmount(), 1e-9);
+            assertEquals(1, savedSteps.get(0).getSeq());
+            assertEquals(TODAY, savedSteps.get(0).getScheduledDate());
+            assertEquals(TODAY.plusDays((365 / 4) * 3L), savedSteps.get(3).getScheduledDate());
+            assertNotNull(result);
+        }
+>>>>>>> develop
 
         Plan saved = service().confirm(goal.getId(), draft(4), null);
         entityManager.flush();
@@ -145,11 +186,20 @@ class PlanConfirmServiceTest extends RepositoryTestBase {
         });
     }
 
+<<<<<<< HEAD
     @Test
     @DisplayName("새 버전을 적용하면 버전이 증가하고 이전 계획은 superseded 다 — 불변조건 §21-10")
     void newVersionSupersedesPrevious() {
         Goal goal = newGoal();
         PlanConfirmService service = service();
+=======
+            ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
+            verify(planStepRepository, times(4)).save(captor.capture());
+            assertEquals(
+                    TODAY.plusDays(365L / 4),
+                    captor.getAllValues().get(1).getScheduledDate());
+        }
+>>>>>>> develop
 
         Plan first = service.confirm(goal.getId(), draft(4), null);
         entityManager.flush();
@@ -160,12 +210,22 @@ class PlanConfirmServiceTest extends RepositoryTestBase {
         Plan reloadedFirst = planRepository.findById(first.getId()).orElseThrow();
         Plan reloadedSecond = planRepository.findById(second.getId()).orElseThrow();
 
+<<<<<<< HEAD
         assertThat(reloadedSecond.getVersion()).isEqualTo(2);
         assertThat(reloadedSecond.getStatus()).isEqualTo(PlanStatus.ACTIVE);
         assertThat(reloadedSecond.getReason()).isEqualTo("예산 감소");
         assertThat(reloadedFirst.getStatus()).isEqualTo(PlanStatus.SUPERSEDED);
         assertThat(reloadedFirst.getSupersededBy()).isEqualTo(second.getId());
     }
+=======
+            ArgumentCaptor<PlanStep> captor = ArgumentCaptor.forClass(PlanStep.class);
+            verify(planStepRepository, times(4)).save(captor.capture());
+            List<PlanStep> savedSteps = captor.getAllValues();
+            assertEquals(
+                    TODAY.plusDays((long) expectedIntervalDays),
+                    savedSteps.get(1).getScheduledDate());
+        }
+>>>>>>> develop
 
     @Test
     @DisplayName("이전 버전의 회차 기록은 지우지 않는다 — 불변조건 §21-11")
