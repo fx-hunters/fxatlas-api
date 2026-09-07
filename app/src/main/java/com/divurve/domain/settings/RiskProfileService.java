@@ -11,6 +11,7 @@ import com.divurve.engine.riskprofile.RiskAssessment;
 import com.divurve.engine.riskprofile.RiskProfileScorer;
 import java.math.BigDecimal;
 import java.math.RoundingMode;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -59,18 +60,21 @@ public class RiskProfileService {
     private final UserSettingsService userSettingsService;
     private final RiskProfileScorer riskProfileScorer;
     private final DetailDiagnosisMapper detailDiagnosisMapper;
+    private final Clock clock;
 
     public RiskProfileService(
             RiskProfileRepository riskProfileRepository,
             UserRepository userRepository,
             UserSettingsService userSettingsService,
             RiskProfileScorer riskProfileScorer,
-            DetailDiagnosisMapper detailDiagnosisMapper) {
+            DetailDiagnosisMapper detailDiagnosisMapper,
+            Clock clock) {
         this.riskProfileRepository = riskProfileRepository;
         this.userRepository = userRepository;
         this.userSettingsService = userSettingsService;
         this.riskProfileScorer = riskProfileScorer;
         this.detailDiagnosisMapper = detailDiagnosisMapper;
+        this.clock = clock;
     }
 
     /**
@@ -107,7 +111,7 @@ public class RiskProfileService {
                 assessment.map(RiskAssessment::score).orElse(null),
                 assessment.map(a -> ratio(a.concentrationThreshold())).orElse(null),
                 assessment.map(a -> ratio(a.safeRatioAdjust())).orElse(null),
-                assessment.isPresent() ? LocalDate.now() : null);
+                assessment.isPresent() ? LocalDate.now(clock) : null);
 
         return toView(riskProfileRepository.save(profile));
     }

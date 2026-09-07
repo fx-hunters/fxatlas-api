@@ -6,29 +6,31 @@ import static org.mockito.Mockito.when;
 
 import com.divurve.common.exception.InvalidRequestException;
 import com.divurve.common.exception.NotFoundException;
-import com.divurve.domain.forecast.ForecastService;
 import com.divurve.domain.forecast.ForecastService.ForecastView;
 import com.divurve.domain.forecast.ForecastService.IntervalView;
 import com.divurve.domain.forecast.ForecastService.LabelsView;
 import com.divurve.domain.forecast.ForecastService.ModelInfoView;
 import com.divurve.domain.forecast.ForecastService.UserImpactView;
 import com.divurve.domain.forecast.ForecastService.VolatilityView;
+import com.divurve.domain.forecast.ForecastService;
 import com.divurve.domain.goal.GoalService;
 import com.divurve.domain.goal.entity.Goal;
-import com.divurve.domain.market.MarketRegimeService;
 import com.divurve.domain.market.MarketRegimeService.AnomalyView;
 import com.divurve.domain.market.MarketRegimeService.GuidanceView;
 import com.divurve.domain.market.MarketRegimeService.MarketRegimeView;
+import com.divurve.domain.market.MarketRegimeService;
 import com.divurve.domain.route.RouteFeatureFlag;
 import com.divurve.domain.settings.RiskProfileService;
 import com.divurve.domain.settings.RiskProfileView;
 import com.divurve.domain.user.UserRepository;
 import com.divurve.domain.user.entity.User;
-import com.divurve.domain.xray.XrayService;
 import com.divurve.domain.xray.XrayService.ConcentrationView;
 import com.divurve.domain.xray.XrayService.PortfolioSnapshot;
 import com.divurve.domain.xray.XrayService.SensitivityView;
+import com.divurve.domain.xray.XrayService;
+import java.time.Clock;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,6 +61,10 @@ class HomeSummaryServiceTest {
     @Mock
     private GoalService goalService;
 
+    private static final LocalDate TODAY = LocalDate.of(2026, 9, 7);
+    private static final Clock CLOCK =
+            Clock.fixed(TODAY.atStartOfDay(ZoneId.of("Asia/Seoul")).toInstant(), ZoneId.of("Asia/Seoul"));
+
     private final UUID userId = UUID.randomUUID();
     private HomeSummaryService service;
 
@@ -66,7 +72,7 @@ class HomeSummaryServiceTest {
     void setUp() {
         service = new HomeSummaryService(
                 userRepository, xrayService, riskProfileService, forecastService,
-                marketRegimeService, goalService, new RouteFeatureFlag(false));
+                marketRegimeService, goalService, new RouteFeatureFlag(false), CLOCK);
     }
 
     private void stubUserExists() {
@@ -100,7 +106,7 @@ class HomeSummaryServiceTest {
 
     private RiskProfileView riskProfileDiagnosed() {
         return new RiskProfileView(
-                RiskProfileService.STATUS_SIMPLE_DONE, "balanced", "균형형", 4, LocalDate.now(), 0.60,
+                RiskProfileService.STATUS_SIMPLE_DONE, "balanced", "균형형", 4, TODAY, 0.60,
                 new RiskProfileView.Simple(Map.of(), List.of(), null),
                 new RiskProfileView.Detail(false, Map.of(), "q5", null),
                 RiskProfileService.LIMITATION_NOTE);
@@ -116,7 +122,7 @@ class HomeSummaryServiceTest {
 
     private ForecastView forecastView() {
         return new ForecastView(
-                "USDKRW", 30, LocalDate.now(), 1382.40, 1382.40,
+                "USDKRW", 30, TODAY, 1382.40, 1382.40,
                 List.of(), List.of(), List.of(),
                 new IntervalView(1346.0, 1431.0, 0.06),
                 new VolatilityView(0.061, 0.72, "elevated"),
@@ -240,7 +246,7 @@ class HomeSummaryServiceTest {
     void getSummary_route_활성화면_목표_목록을_조회한다() {
         service = new HomeSummaryService(
                 userRepository, xrayService, riskProfileService, forecastService,
-                marketRegimeService, goalService, new RouteFeatureFlag(true));
+                marketRegimeService, goalService, new RouteFeatureFlag(true), CLOCK);
         stubUserExists();
         when(marketRegimeService.getRegime()).thenReturn(regimeView("normal", "normal"));
         when(xrayService.getPortfolio(userId)).thenReturn(portfolioWithoutFx());
@@ -266,7 +272,7 @@ class HomeSummaryServiceTest {
     void getSummary_route_활성화면서_목표가_없으면_empty다() {
         service = new HomeSummaryService(
                 userRepository, xrayService, riskProfileService, forecastService,
-                marketRegimeService, goalService, new RouteFeatureFlag(true));
+                marketRegimeService, goalService, new RouteFeatureFlag(true), CLOCK);
         stubUserExists();
         when(marketRegimeService.getRegime()).thenReturn(regimeView("normal", "normal"));
         when(xrayService.getPortfolio(userId)).thenReturn(portfolioWithoutFx());
@@ -292,8 +298,8 @@ class HomeSummaryServiceTest {
         when(forecastService.getForecast(userId, "USDKRW", ForecastService.DEFAULT_HORIZON_DAYS))
                 .thenReturn(forecastView());
         when(forecastService.getEvents()).thenReturn(List.of(
-                new ForecastService.EconomicEventView(LocalDate.now().plusDays(3), "FOMC", "USD", "high"),
-                new ForecastService.EconomicEventView(LocalDate.now().plusDays(60), "먼미래", "USD", "low")));
+                new ForecastService.EconomicEventView(TODAY.plusDays(3), "FOMC", "USD", "high"),
+                new ForecastService.EconomicEventView(TODAY.plusDays(60), "먼미래", "USD", "low")));
 
         HomeSummaryService.HomeSummaryView view = service.getSummary(userId);
 

@@ -11,6 +11,7 @@ import com.divurve.engine.concentration.ConcentrationCalculator;
 import com.divurve.engine.cost.CostCalculator;
 import com.divurve.engine.split.SplitVarianceReducer;
 import com.divurve.engine.simulate.MonteCarloSimulator;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,6 +52,7 @@ public class PlanPreviewService {
     private final MonteCarloSimulator monteCarloSimulator;
     private final ConcentrationCalculator concentrationCalculator;
     private final PerUnitFxRates perUnitFxRates;
+    private final Clock clock;
 
     public PlanPreviewService(GoalRepository goalRepository,
             BucketAllocator bucketAllocator,
@@ -58,7 +60,8 @@ public class PlanPreviewService {
             CostCalculator costCalculator,
             MonteCarloSimulator monteCarloSimulator,
             ConcentrationCalculator concentrationCalculator,
-            PerUnitFxRates perUnitFxRates) {
+            PerUnitFxRates perUnitFxRates,
+            Clock clock) {
         this.goalRepository = Objects.requireNonNull(goalRepository, "GoalRepository는 null일 수 없습니다");
         this.bucketAllocator = Objects.requireNonNull(bucketAllocator, "BucketAllocator는 null일 수 없습니다");
         this.splitVarianceReducer = Objects.requireNonNull(splitVarianceReducer,
@@ -69,6 +72,7 @@ public class PlanPreviewService {
         this.concentrationCalculator = Objects.requireNonNull(concentrationCalculator,
                 "ConcentrationCalculator는 null일 수 없습니다");
         this.perUnitFxRates = Objects.requireNonNull(perUnitFxRates, "PerUnitFxRates는 null일 수 없습니다");
+        this.clock = Objects.requireNonNull(clock, "Clock은 null일 수 없습니다");
     }
 
     /**
@@ -263,14 +267,14 @@ public class PlanPreviewService {
             return 12;
         }
 
-        long days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(), targetDate);
+        long days = java.time.temporal.ChronoUnit.DAYS.between(LocalDate.now(clock), targetDate);
         return (int) (days / 30);
     }
 
     private List<PlanPreviewInfo.Step> generateSchedule(long safeAmountKrw, int splitCount, int intervalDays) {
         List<PlanPreviewInfo.Step> steps = new ArrayList<>();
         double stepAmount = safeAmountKrw / splitCount;
-        LocalDate currentDate = LocalDate.now();
+        LocalDate currentDate = LocalDate.now(clock);
 
         for (int i = 1; i <= splitCount; i++) {
             LocalDate scheduledDate = currentDate.plusDays((long) intervalDays * (i - 1));
